@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Quiz - Quiz Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'fade-in': 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          },
+          keyframes: {
+            slideUp: {
+              '0%': { transform: 'translateY(12px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col">
+
+  <!-- Header -->
+  <div id="header-container"></div>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+    <!-- Back Navigation -->
+    <div class="mb-6">
+      <a
+        href="dashboard.html"
+        class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-blue-600 transition"
+      >
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Back to Dashboard
+      </a>
+    </div>
+
+    <!-- Create Quiz Form -->
+    <form id="create-quiz-form" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- Settings Panel (Left Column) -->
+      <div class="lg:col-span-1 space-y-6">
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <i data-lucide="settings" class="w-5 h-5 text-blue-600"></i>
+            Quiz Settings
+          </h2>
+
+          <div class="space-y-4">
+            <div>
+              <label for="quiz-title" class="block text-sm font-semibold text-slate-700 mb-1">Quiz Title</label>
+              <input
+                type="text"
+                id="quiz-title"
+                required
+                placeholder="e.g. DBMS Midterm Exam"
+                class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="quiz-rounds" class="block text-sm font-semibold text-slate-700 mb-1">Rounds</label>
+                <input
+                  type="number"
+                  id="quiz-rounds"
+                  min="1"
+                  max="10"
+                  required
+                  value="1"
+                  class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm"
+                />
+              </div>
+              <div>
+                <label for="quiz-duration" class="block text-sm font-semibold text-slate-700 mb-1">Duration (mins)</label>
+                <input
+                  type="number"
+                  id="quiz-duration"
+                  min="1"
+                  max="180"
+                  required
+                  value="15"
+                  class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label for="quiz-code" class="block text-sm font-semibold text-slate-700 mb-1">Access Code</label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  id="quiz-code"
+                  required
+                  placeholder="Access Code"
+                  class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm font-mono tracking-wider font-bold"
+                />
+                <button
+                  type="button"
+                  id="generate-code-btn"
+                  class="p-2 border border-slate-300 hover:border-blue-500 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 transition cursor-pointer"
+                  title="Generate New Code"
+                >
+                  <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-100">
+              <label class="flex items-center gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="quiz-randomize"
+                  class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                />
+                <div class="flex flex-col">
+                  <span class="text-sm font-semibold text-slate-700">Randomize Questions</span>
+                  <span class="text-xs text-slate-500">Shuffles questions deterministically for students</span>
+                </div>
+              </label>
+            </div>
+
+            <div class="pt-4 border-t border-slate-100">
+              <div class="flex justify-between items-center text-sm font-semibold text-slate-700 mb-2">
+                <span>Selected Questions</span>
+                <span id="selected-count-badge" class="text-blue-600 px-2 py-0.5 bg-blue-50 rounded-lg">
+                  0
+                </span>
+              </div>
+              <p class="text-xs text-slate-500">This number determines the active question count for this quiz.</p>
+            </div>
+
+            <button
+              type="submit"
+              id="submit-quiz-btn"
+              class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition cursor-pointer"
+            >
+              Assemble & Launch Quiz
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Question Selector (Right Column) -->
+      <div class="lg:col-span-2 space-y-6">
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="help-circle" class="w-5 h-5 text-blue-600"></i>
+                Select Questions from Bank
+              </h2>
+              <p class="text-slate-500 text-xs mt-0.5">Filter questions by syllabus tag and toggle checkboxes to add to quiz.</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span class="text-slate-400">
+                <i data-lucide="tag" class="w-4 h-4"></i>
+              </span>
+              <select
+                id="tag-selector"
+                class="block w-full sm:w-48 px-3 py-1.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-xs bg-white"
+              >
+                <option value="all">All Syllabus Tags</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Loader / List Container -->
+          <div id="questions-container" class="space-y-4">
+            <div class="py-12 flex justify-center items-center">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </form>
+  </main>
+
+  <!-- CDNs for JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/create.js"></script>
+</body>
+</html>

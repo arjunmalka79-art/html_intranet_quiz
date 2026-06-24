@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz Result - Quiz Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'bounce-in': 'bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+          },
+          keyframes: {
+            slideUp: {
+              '0%': { transform: 'translateY(12px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            bounceIn: {
+              '0%': { transform: 'scale(0.5)', opacity: '0' },
+              '100%': { transform: 'scale(1)', opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col">
+
+  <!-- Header -->
+  <div id="header-container"></div>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col justify-center items-center px-4 py-12">
+    <div class="max-w-md w-full text-center animate-slide-up">
+
+      <!-- Success Check Circle Icon -->
+      <div class="flex justify-center mb-6">
+        <span class="inline-flex items-center justify-center p-4 bg-emerald-50 rounded-2xl text-emerald-600 border border-emerald-100 shadow-sm animate-bounce">
+          <i data-lucide="check-circle-2" class="w-10 h-10"></i>
+        </span>
+      </div>
+
+      <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Quiz Submitted!</h1>
+      <p class="mt-2 text-slate-600 text-sm" id="congrats-text">
+        Congratulations, your responses have been registered.
+      </p>
+
+      <!-- Centered White Quiz Result Card -->
+      <div class="bg-white border border-slate-200 shadow-md rounded-2xl p-8 mt-8">
+        <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+          Performance Summary
+        </span>
+
+        <h2 class="text-lg font-bold text-slate-800 mt-4 mb-1 line-clamp-2" id="quiz-title-display">
+          Quiz
+        </h2>
+
+        <!-- Score circle -->
+        <div class="my-8 flex flex-col items-center justify-center">
+          <div class="w-32 h-32 rounded-full border-4 border-slate-100 flex flex-col items-center justify-center bg-slate-50 shadow-inner relative animate-bounce-in">
+            <span class="text-3xl font-black text-slate-900" id="score-display">0</span>
+            <span class="text-xs font-semibold text-slate-400 mt-0.5 border-t border-slate-200 w-10 pt-0.5 text-center" id="total-display">out of 0</span>
+          </div>
+        </div>
+
+        <!-- Percentage Bar & Info -->
+        <div class="space-y-4 mb-6">
+          <div>
+            <div class="flex justify-between items-center text-xs font-bold text-slate-600 mb-1">
+              <span>Overall Score</span>
+              <span id="pct-display">0%</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2">
+              <div
+                id="pct-bar"
+                class="h-full rounded-full transition-all duration-1000"
+                style="width: 0%"
+              ></div>
+            </div>
+          </div>
+          
+          <p class="text-xs text-slate-500 font-medium" id="feedback-text">
+            Keep studying! Practice makes perfect.
+          </p>
+        </div>
+
+        <button
+          id="return-btn"
+          class="w-full flex items-center justify-center gap-1.5 py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer"
+        >
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          Take Another Quiz
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- CDNs for JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/result.js"></script>
+</body>
+</html>

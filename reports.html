@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports Panel - Quiz Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'fade-in': 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          },
+          keyframes: {
+            slideUp: {
+              '0%': { transform: 'translateY(12px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col">
+
+  <!-- Header -->
+  <div id="header-container"></div>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+    <!-- Back nav -->
+    <div class="mb-6">
+      <a
+        href="dashboard.html"
+        class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-colors"
+      >
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Back to Dashboard
+      </a>
+    </div>
+
+    <!-- Page header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+          <i data-lucide="bar-chart-3" class="w-6 h-6 text-blue-600"></i>
+          Reports Panel
+        </h1>
+        <p class="text-slate-500 text-sm mt-1">
+          Review student performance across your quizzes only.
+        </p>
+      </div>
+
+      <!-- Quiz filter dropdown -->
+      <div class="relative w-full sm:w-72">
+        <label for="quiz-filter" class="block text-xs font-semibold text-slate-500 mb-1 ml-1">
+          Filter by Quiz
+        </label>
+        <div class="relative">
+          <select
+            id="quiz-filter"
+            class="w-full appearance-none pl-4 pr-10 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer shadow-sm transition"
+          >
+            <option value="all">All Quizzes</option>
+          </select>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics Cards Row -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8" id="metrics-container">
+      <!-- Total students attended -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+        <span class="p-3 bg-blue-50 rounded-xl text-blue-600 shrink-0">
+          <i data-lucide="users" class="w-5 h-5"></i>
+        </span>
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total Students Attended</p>
+          <p class="text-3xl font-black text-slate-900 mt-0.5" id="metric-total-attended">0</p>
+          <p class="text-xs text-slate-400 mt-0.5" id="metric-quiz-scope">All Quizzes</p>
+        </div>
+      </div>
+
+      <!-- Average score -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+        <span class="p-3 bg-cyan-50 rounded-xl text-cyan-600 shrink-0">
+          <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+        </span>
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Class Average</p>
+          <p class="text-3xl font-black text-slate-900 mt-0.5" id="metric-average-score">—</p>
+          <p class="text-xs text-slate-400 mt-0.5" id="metric-average-scope">No data yet</p>
+        </div>
+      </div>
+
+      <!-- Latest submission -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+        <span class="p-3 bg-amber-50 rounded-xl text-amber-600 shrink-0">
+          <i data-lucide="calendar-days" class="w-5 h-5"></i>
+        </span>
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Latest Submission</p>
+          <p class="text-sm font-bold text-slate-900 mt-0.5 truncate" id="metric-latest-time">—</p>
+          <p class="text-xs text-slate-400 mt-0.5 truncate" id="metric-latest-student">No data yet</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Results Table / Empty State Container -->
+    <div id="reports-container">
+      <div class="py-24 flex justify-center items-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- CDNs for JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/reports.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Dashboard - Quiz Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'fade-in': 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          },
+          keyframes: {
+            slideUp: {
+              '0%': { transform: 'translateY(12px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col">
+
+  <!-- Shared Header -->
+  <div id="header-container"></div>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+    <!-- Header Section with Actions -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Teacher Dashboard</h1>
+        <p class="text-slate-600 text-sm mt-1">Manage your question bank, create new active quizzes, and monitor student reports.</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <a
+          href="reports.html"
+          class="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-all duration-200"
+        >
+          <i data-lucide="bar-chart-3" class="w-4 h-4 text-slate-500"></i>
+          View Reports
+        </a>
+        
+        <a
+          href="questions.html"
+          class="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-all duration-200"
+        >
+          <i data-lucide="help-circle" class="w-4 h-4 text-slate-500"></i>
+          Manage Question Bank
+        </a>
+
+        <a
+          href="create.html"
+          class="inline-flex items-center gap-2 px-4 py-2.5 border border-transparent rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all duration-200 shadow-sm shadow-blue-100"
+        >
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          Create Quiz
+        </a>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="mb-6">
+      <div class="relative max-w-md w-full">
+        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <i data-lucide="search" class="h-5 w-5 text-slate-400"></i>
+        </div>
+        <input
+          type="text"
+          id="search-quizzes"
+          placeholder="Search your quizzes..."
+          class="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-900 placeholder-slate-400 text-sm bg-white"
+        />
+      </div>
+    </div>
+
+    <!-- Loading Spinner / Content Area -->
+    <div id="content-area">
+      <!-- Dynamically populated -->
+      <div class="py-24 flex justify-center items-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- CDNs for JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

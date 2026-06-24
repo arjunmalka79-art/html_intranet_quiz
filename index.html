@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join Active Quiz - Quiz Platform</title>
+  <meta name="description" content="Enter your name and quiz access code to join the quiz session.">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'fade-in': 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          },
+          keyframes: {
+            slideUp: {
+              '0%': { transform: 'translateY(12px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col">
+
+  <!-- Header Placeholder -->
+  <div id="header-container"></div>
+
+  <!-- Main Student Lobby Content -->
+  <main class="flex-1 flex flex-col justify-center items-center px-4 py-12">
+    <div class="max-w-md w-full animate-slide-up">
+      <!-- Decorative Cap Icon -->
+      <div class="flex justify-center mb-6">
+        <span class="inline-flex items-center justify-center p-4 bg-blue-50 rounded-2xl text-blue-600">
+          <i data-lucide="graduation-cap" class="w-10 h-10"></i>
+        </span>
+      </div>
+
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Join Active Quiz</h1>
+        <p class="mt-2 text-slate-600 text-sm">
+          Enter your Name and the Access Code provided by your teacher to start your quiz session.
+        </p>
+      </div>
+
+      <!-- Centered White Quiz Card -->
+      <div class="bg-white border border-slate-200 shadow-md rounded-2xl p-8">
+        <form id="join-quiz-form" class="space-y-6">
+          <div>
+            <label for="student-name" class="block text-sm font-semibold text-slate-700 mb-1">
+              Your Full Name
+            </label>
+            <div class="relative rounded-md shadow-sm">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i data-lucide="user" class="h-5 w-5 text-slate-400"></i>
+              </div>
+              <input
+                id="student-name"
+                type="text"
+                required
+                placeholder="Enter your name"
+                class="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 placeholder-slate-400 text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label for="access-code" class="block text-sm font-semibold text-slate-700 mb-1">
+              Quiz Access Code
+            </label>
+            <div class="relative rounded-md shadow-sm">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i data-lucide="key-round" class="h-5 w-5 text-slate-400"></i>
+              </div>
+              <input
+                id="access-code"
+                type="text"
+                required
+                placeholder="e.g. QUIZ42"
+                class="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 placeholder-slate-400 text-sm font-mono tracking-wider font-bold"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            id="submit-btn"
+            class="w-full flex items-center justify-center gap-1.5 py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition cursor-pointer"
+          >
+            <span id="btn-text">Start Quiz</span>
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- CDNs for JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="config.js"></script>
+  <script src="js/auth.js"></script>
+  
+  <!-- Page Logic -->
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 1. Initial auth check & header render
+      const user = await window.checkAuth();
+      window.renderHeader(user);
+
+      // Force uppercase on access code input
+      const accessCodeInput = document.getElementById('access-code');
+      accessCodeInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+      });
+
+      // Handle Form Submit
+      const joinForm = document.getElementById('join-quiz-form');
+      const submitBtn = document.getElementById('submit-btn');
+      const btnText = document.getElementById('btn-text');
+
+      joinForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const studentName = document.getElementById('student-name').value.trim();
+        const accessCode = accessCodeInput.value.trim();
+
+        if (!studentName) {
+          window.showToast('Please enter your name.', 'error');
+          return;
+        }
+
+        if (!accessCode) {
+          window.showToast('Please enter the Quiz Access Code.', 'error');
+          return;
+        }
+
+        submitBtn.disabled = true;
+        btnText.textContent = 'Entering Lobby...';
+
+        try {
+          const { data: quiz, error } = await window.supabaseClient
+            .from('quizzes')
+            .select('access_code, title')
+            .eq('access_code', accessCode.toUpperCase())
+            .maybeSingle();
+
+          if (error) throw error;
+
+          if (!quiz) {
+            window.showToast('Invalid Access Code. Please check with your teacher.', 'error');
+            submitBtn.disabled = false;
+            btnText.textContent = 'Start Quiz';
+            return;
+          }
+
+          window.showToast(`Joining quiz: ${quiz.title}...`, 'success');
+          
+          // Store student name in sessionStorage
+          sessionStorage.setItem('studentName', studentName);
+
+          // Route to quiz page
+          setTimeout(() => {
+            window.location.href = `quiz.html?code=${quiz.access_code}`;
+          }, 800);
+        } catch (err) {
+          console.error('Error joining quiz:', err);
+          window.showToast(err.message || 'An error occurred while validating the code', 'error');
+          submitBtn.disabled = false;
+          btnText.textContent = 'Start Quiz';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

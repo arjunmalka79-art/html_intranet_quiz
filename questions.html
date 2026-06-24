@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage Question Bank - Quiz Platform</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'fade-in': 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          },
+          keyframes: {
+            slideUp: {
+              '0%': { transform: 'translateY(12px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col">
+
+  <!-- Header -->
+  <div id="header-container"></div>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+    <!-- Back Navigation & Toggle Form -->
+    <div class="mb-6 flex items-center justify-between">
+      <a
+        href="dashboard.html"
+        class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-blue-600 transition"
+      >
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Back to Dashboard
+      </a>
+      
+      <button
+        id="toggle-add-form"
+        class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition shadow-sm shadow-blue-100 cursor-pointer"
+      >
+        <i data-lucide="plus" class="w-4 h-4" id="toggle-icon"></i>
+        <span id="toggle-text">Add Question</span>
+      </button>
+    </div>
+
+    <!-- Toggleable Form Panel (Manual Creation + CSV Import) -->
+    <div id="add-form-panel" class="hidden bg-white border border-slate-200 rounded-2xl p-6 mb-8 shadow-sm animate-slide-up">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Left: Manual Creation Form (2 cols) -->
+        <div class="lg:col-span-2 space-y-4">
+          <h2 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <i data-lucide="help-circle" class="w-5 h-5 text-blue-600"></i>
+            Add Question to Global Bank
+          </h2>
+          <form id="manual-question-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label for="syllabus-tag" class="block text-sm font-semibold text-slate-700 mb-1">
+                  Syllabus / Topic Tag
+                </label>
+                <input
+                  type="text"
+                  id="syllabus-tag"
+                  required
+                  placeholder="e.g. Grade 5 Math, DBMS Exam, Science"
+                  class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm"
+                />
+              </div>
+              
+              <div>
+                <label for="correct-option" class="block text-sm font-semibold text-slate-700 mb-1">
+                  Correct Option
+                </label>
+                <select
+                  id="correct-option"
+                  class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm bg-white"
+                >
+                  <option value="A">Option A</option>
+                  <option value="B">Option B</option>
+                  <option value="C">Option C</option>
+                  <option value="D">Option D</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label for="question-text" class="block text-sm font-semibold text-slate-700 mb-1">
+                Question Text
+              </label>
+              <textarea
+                id="question-text"
+                required
+                rows="3"
+                placeholder="Enter the question text here..."
+                class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm"
+              ></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="option-a" class="block text-sm font-semibold text-slate-700 mb-1">Option A</label>
+                <input type="text" id="option-a" required placeholder="Choice A text" class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm" />
+              </div>
+              <div>
+                <label for="option-b" class="block text-sm font-semibold text-slate-700 mb-1">Option B</label>
+                <input type="text" id="option-b" required placeholder="Choice B text" class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm" />
+              </div>
+              <div>
+                <label for="option-c" class="block text-sm font-semibold text-slate-700 mb-1">Option C</label>
+                <input type="text" id="option-c" required placeholder="Choice C text" class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm" />
+              </div>
+              <div>
+                <label for="option-d" class="block text-sm font-semibold text-slate-700 mb-1">Option D</label>
+                <input type="text" id="option-d" required placeholder="Choice D text" class="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm" />
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-2">
+              <button type="button" id="cancel-form-btn" class="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 font-semibold text-sm transition">
+                Cancel
+              </button>
+              <button type="submit" id="submit-question-btn" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition disabled:opacity-50">
+                Save Question
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Right: Import from CSV Form (1 col) -->
+        <div class="border-t lg:border-t-0 lg:border-l border-slate-200 pt-6 lg:pt-0 lg:pl-8 flex flex-col justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <i data-lucide="file-spreadsheet" class="w-5 h-5 text-emerald-600"></i>
+              Import from CSV
+            </h2>
+            <p class="text-slate-600 text-xs mb-4">
+              Add multiple questions at once by uploading a CSV. The expected columns must be exactly:
+            </p>
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 font-mono text-[10px] text-slate-700 mb-4 overflow-x-auto space-y-1">
+              <strong>Expected Header Columns:</strong>
+              <div>syllabus_tag, question_text, option_a, option_b, option_c, option_d, correct_option</div>
+              <div class="text-[9px] text-slate-400 mt-2">Note: correct_option values must be 'A', 'B', 'C', or 'D'.</div>
+            </div>
+
+            <!-- CSV Upload Input -->
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Select CSV File</label>
+                <input 
+                  type="file" 
+                  id="csv-file-input" 
+                  accept=".csv"
+                  class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl p-2 bg-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-6">
+            <button
+              type="button"
+              id="import-csv-btn"
+              class="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition shadow-sm shadow-emerald-100 disabled:opacity-50 cursor-pointer"
+            >
+              <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+              Upload and Import
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Filter and Overview Section -->
+    <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900">Question Bank</h1>
+        <p class="text-slate-500 text-sm mt-0.5" id="questions-summary">
+          0 questions registered total. Select a syllabus tag to filter.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2 w-full md:w-auto">
+        <span class="text-slate-400 p-1">
+          <i data-lucide="filter" class="w-4 h-4"></i>
+        </span>
+        <select
+          id="tag-filter"
+          class="block w-full md:w-48 px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-sm bg-white"
+        >
+          <option value="all">All Syllabus Tags</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Question List Area -->
+    <div id="questions-list" class="space-y-4">
+      <div class="py-16 flex justify-center items-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- CDNs for JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/questions.js"></script>
+</body>
+</html>
