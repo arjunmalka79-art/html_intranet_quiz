@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const csvFileInput = document.getElementById('csv-file-input');
   const importCsvBtn = document.getElementById('import-csv-btn');
+  const csvPasteInput = document.getElementById('csvPasteInput');
+  const btnPasteImport = document.getElementById('btnPasteImport');
 
   // Toggle form panel
   let showForm = false;
@@ -156,26 +158,26 @@ document.addEventListener('DOMContentLoaded', async () => {
           <p class="text-slate-900 font-semibold mb-4 pr-8">${escapeHtml(q.question_text)}</p>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-            <div class="p-3 rounded-xl border text-sm flex gap-2 ${q.correct_option === 'A' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
+            <div class="p-3 rounded-xl border text-sm flex gap-2 ${(q.correct_option || '').toUpperCase() === 'A' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
               <span class="font-bold text-slate-400">A.</span>
               <span>${escapeHtml(q.option_a)}</span>
             </div>
-            <div class="p-3 rounded-xl border text-sm flex gap-2 ${q.correct_option === 'B' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
+            <div class="p-3 rounded-xl border text-sm flex gap-2 ${(q.correct_option || '').toUpperCase() === 'B' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
               <span class="font-bold text-slate-400">B.</span>
               <span>${escapeHtml(q.option_b)}</span>
             </div>
-            <div class="p-3 rounded-xl border text-sm flex gap-2 ${q.correct_option === 'C' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
+            <div class="p-3 rounded-xl border text-sm flex gap-2 ${(q.correct_option || '').toUpperCase() === 'C' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
               <span class="font-bold text-slate-400">C.</span>
               <span>${escapeHtml(q.option_c)}</span>
             </div>
-            <div class="p-3 rounded-xl border text-sm flex gap-2 ${q.correct_option === 'D' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
+            <div class="p-3 rounded-xl border text-sm flex gap-2 ${(q.correct_option || '').toUpperCase() === 'D' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
               <span class="font-bold text-slate-400">D.</span>
               <span>${escapeHtml(q.option_d)}</span>
             </div>
           </div>
-
+ 
           <div class="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl w-fit">
-            Correct Answer: Option ${q.correct_option}
+            Correct Answer: Option ${(q.correct_option || '').toUpperCase()}
           </div>
         </div>
       `;
@@ -292,15 +294,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Validation mapping
         rows.forEach((row, index) => {
           const rowNum = index + 2; // header is row 1
-          const tag = row['syllabus_tag'];
-          const text = row['question_text'];
-          const optA = row['option_a'];
-          const optB = row['option_b'];
-          const optC = row['option_c'];
-          const optD = row['option_d'];
+          const tag = row['subject'];
+          const text = row['question'];
+          const opt1 = row['option1'];
+          const opt2 = row['option2'];
+          const opt3 = row['option3'];
+          const opt4 = row['option4'];
           let correct = row['correct_option'];
 
-          if (!tag || !text || !optA || !optB || !optC || !optD || !correct) {
+          if (!tag || !text || !opt1 || !opt2 || !opt3 || !opt4 || !correct) {
             errors.push(`Row ${rowNum}: Contains empty or missing fields.`);
             return;
           }
@@ -315,10 +317,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             teacher_id: user.id,
             syllabus_tag: tag.trim(),
             question_text: text.trim(),
-            option_a: optA.trim(),
-            option_b: optB.trim(),
-            option_c: optC.trim(),
-            option_d: optD.trim(),
+            option_a: opt1.trim(),
+            option_b: opt2.trim(),
+            option_c: opt3.trim(),
+            option_d: opt4.trim(),
             correct_option: correct
           });
         });
@@ -355,6 +357,144 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetImportButton();
       }
     });
+  });
+
+  // CSV Paste Import feature
+  btnPasteImport.addEventListener('click', async () => {
+    const rawText = csvPasteInput.value.trim();
+    if (!rawText) {
+      alert('Please paste some CSV data first.');
+      return;
+    }
+
+    btnPasteImport.disabled = true;
+    const originalBtnHtml = btnPasteImport.innerHTML;
+    btnPasteImport.textContent = 'Parsing...';
+
+    // Check schema dynamically
+    let hasChapter = false;
+    let hasTopic = false;
+    let hasExplanation = false;
+
+    try {
+      const { error: chErr } = await window.supabaseClient.from('question_bank').select('chapter').limit(1);
+      hasChapter = !chErr;
+    } catch (e) {}
+
+    try {
+      const { error: topErr } = await window.supabaseClient.from('question_bank').select('topic').limit(1);
+      hasTopic = !topErr;
+    } catch (e) {}
+
+    try {
+      const { error: expErr } = await window.supabaseClient.from('question_bank').select('explanation').limit(1);
+      hasExplanation = !expErr;
+    } catch (e) {}
+
+    Papa.parse(rawText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim().toLowerCase(),
+      complete: async (results) => {
+        const rows = results.data;
+        if (rows.length === 0) {
+          alert('No CSV data found in the input.');
+          resetPasteButton();
+          return;
+        }
+
+        const validRows = [];
+        const errors = [];
+
+        rows.forEach((row, index) => {
+          const rowNum = index + 2; // header is row 1
+          const question = row['question'];
+          const opt1 = row['option1'];
+          const opt2 = row['option2'];
+          const opt3 = row['option3'];
+          const opt4 = row['option4'];
+          const correctOption = row['correct_option'];
+          const subject = row['subject'];
+
+          if (!question || !opt1 || !opt2 || !opt3 || !opt4 || !correctOption) {
+            errors.push(`Row ${rowNum}: Missing required fields (question, options, or correct_option).`);
+            return;
+          }
+
+          const correct = correctOption.trim().toLowerCase();
+          if (correct !== 'a' && correct !== 'b' && correct !== 'c' && correct !== 'd') {
+            errors.push(`Row ${rowNum}: Invalid correct_option "${correctOption}". Must be a, b, c, or d.`);
+            return;
+          }
+
+          const syllabusTag = (subject && subject.trim()) ? subject.trim() : 'General';
+
+          const mappedRow = {
+            teacher_id: user.id,
+            syllabus_tag: syllabusTag,
+            question_text: question.trim(),
+            option_a: opt1.trim(),
+            option_b: opt2.trim(),
+            option_c: opt3.trim(),
+            option_d: opt4.trim(),
+            correct_option: correct
+          };
+
+          // Conditional fields if they exist in schema and row
+          if (hasChapter && 'chapter' in row) {
+            mappedRow.chapter = row['chapter'] ? row['chapter'].trim() : null;
+          }
+          if (hasTopic && 'topic' in row) {
+            mappedRow.topic = row['topic'] ? row['topic'].trim() : null;
+          }
+          if (hasExplanation) {
+            if ('correct_answer_logic' in row) {
+              mappedRow.explanation = row['correct_answer_logic'] ? row['correct_answer_logic'].trim() : null;
+            } else if ('explanation' in row) {
+              mappedRow.explanation = row['explanation'] ? row['explanation'].trim() : null;
+            }
+          }
+
+          validRows.push(mappedRow);
+        });
+
+        if (errors.length > 0) {
+          alert(`CSV Validation Failed:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...and more' : ''}`);
+          resetPasteButton();
+          return;
+        }
+
+        btnPasteImport.textContent = 'Importing...';
+
+        try {
+          const { error } = await window.supabaseClient
+            .from('question_bank')
+            .insert(validRows);
+
+          if (error) throw error;
+
+          alert(`Successfully imported ${validRows.length} questions!`);
+          csvPasteInput.value = '';
+          toggleForm(false);
+          fetchQuestions();
+        } catch (err) {
+          console.error('Error importing pasted CSV:', err);
+          alert(err.message || 'Failed to import questions. Please check console.');
+        } finally {
+          resetPasteButton();
+        }
+      },
+      error: (err) => {
+        console.error('CSV Parsing Error:', err);
+        alert('Error parsing CSV input. Please make sure it is valid CSV format.');
+        resetPasteButton();
+      }
+    });
+
+    function resetPasteButton() {
+      btnPasteImport.disabled = false;
+      btnPasteImport.innerHTML = originalBtnHtml;
+    }
   });
 
   function resetImportButton() {

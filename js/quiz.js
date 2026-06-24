@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       let finalScore = 0;
       questions.forEach((q) => {
         const studentAns = answers[q.id];
-        if (studentAns === q.correct_option) {
+        if (studentAns && q.correct_option && studentAns.trim().toUpperCase() === q.correct_option.trim().toUpperCase()) {
           finalScore++;
         }
       });
