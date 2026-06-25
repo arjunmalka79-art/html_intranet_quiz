@@ -349,7 +349,7 @@ Rules:
     // Filter out rows that are completely empty (PapaParse sometimes adds ghost rows)
     const dataRows = parsedData.filter(row => {
       const question = row.question || row.question_text || '';
-      const correct = row.correct_option || '';
+      const correct = row.correct_option || row['correct_option '] || '';
       return question.trim() !== '' && correct.trim() !== '';
     });
 
@@ -378,7 +378,7 @@ Rules:
         option_b: isMCQ ? (row.option2 || null) : null,
         option_c: isMCQ ? (row.option3 || null) : null,
         option_d: isMCQ ? (row.option4 || null) : null,
-        correct_option: (row.correct_option || '').trim(),
+        correct_option: (row.correct_option || row['correct_option '] || '').trim(),
         syllabus_tag: (row.subject || row.syllabus_tag || 'General').trim()
       };
     });
