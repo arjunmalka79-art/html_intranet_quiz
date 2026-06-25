@@ -24,7 +24,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const csvFileInput = document.getElementById('csv-file-input');
   const importCsvBtn = document.getElementById('import-csv-btn');
   const csvPasteInput = document.getElementById('csvPasteInput');
-  const btnPasteImport = document.getElementById('btnPasteImport');
+  const toggleModeFile = document.getElementById('toggle-mode-file');
+  const toggleModePaste = document.getElementById('toggle-mode-paste');
+  const wrapperFileInput = document.getElementById('wrapper-file-input');
+  const wrapperPasteInput = document.getElementById('wrapper-paste-input');
+  const importBtnText = document.getElementById('import-btn-text');
 
   // Toggle form panel
   let showForm = false;
@@ -40,9 +44,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       toggleIcon.setAttribute('data-lucide', 'plus');
       manualForm.reset();
       csvFileInput.value = '';
+      csvPasteInput.value = '';
+      setImportMode('file');
     }
     window.lucide.createIcons();
   }
+
+  let importMode = 'file';
+  function setImportMode(mode) {
+    importMode = mode;
+    if (mode === 'file') {
+      toggleModeFile.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+      toggleModeFile.classList.remove('text-slate-600', 'hover:text-slate-900');
+      toggleModePaste.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+      toggleModePaste.classList.add('text-slate-600', 'hover:text-slate-900');
+      
+      wrapperFileInput.classList.remove('hidden');
+      wrapperPasteInput.classList.add('hidden');
+      
+      importBtnText.textContent = 'Process and Import File';
+    } else {
+      toggleModePaste.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+      toggleModePaste.classList.remove('text-slate-600', 'hover:text-slate-900');
+      toggleModeFile.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+      toggleModeFile.classList.add('text-slate-600', 'hover:text-slate-900');
+      
+      wrapperPasteInput.classList.remove('hidden');
+      wrapperFileInput.classList.add('hidden');
+      
+      importBtnText.textContent = 'Process and Import Text Block';
+    }
+  }
+
+  toggleModeFile.addEventListener('click', () => setImportMode('file'));
+  toggleModePaste.addEventListener('click', () => setImportMode('paste'));
 
   toggleAddFormBtn.addEventListener('click', () => toggleForm());
   cancelFormBtn.addEventListener('click', () => toggleForm(false));
@@ -265,244 +300,212 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // CSV Import feature
-  importCsvBtn.addEventListener('click', () => {
-    const file = csvFileInput.files[0];
-    if (!file) {
-      window.showToast('Please select a CSV file first.', 'error');
+  // Consolidated CSV Ingestion Process
+  async function processCSVData(parsedData, sourceName) {
+    if (parsedData.length === 0) {
+      window.showToast(`No data found in ${sourceName}.`, 'error');
       return;
     }
 
-    importCsvBtn.disabled = true;
-    importCsvBtn.textContent = 'Parsing...';
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (header) => header.trim().toLowerCase(),
-      complete: async (results) => {
-        const rows = results.data;
-        if (rows.length === 0) {
-          window.showToast('The CSV file is empty.', 'error');
-          resetImportButton();
-          return;
-        }
-
-        const validRows = [];
-        const errors = [];
-
-        // Validation mapping
-        rows.forEach((row, index) => {
-          const rowNum = index + 2; // header is row 1
-          const tag = row['subject'];
-          const text = row['question'];
-          const opt1 = row['option1'];
-          const opt2 = row['option2'];
-          const opt3 = row['option3'];
-          const opt4 = row['option4'];
-          let correct = row['correct_option'];
-
-          if (!tag || !text || !opt1 || !opt2 || !opt3 || !opt4 || !correct) {
-            errors.push(`Row ${rowNum}: Contains empty or missing fields.`);
-            return;
-          }
-
-          correct = correct.trim().toUpperCase();
-          if (correct !== 'A' && correct !== 'B' && correct !== 'C' && correct !== 'D') {
-            errors.push(`Row ${rowNum}: Invalid correct_option "${correct}". Must be A, B, C, or D.`);
-            return;
-          }
-
-          validRows.push({
-            teacher_id: user.id,
-            syllabus_tag: tag.trim(),
-            question_text: text.trim(),
-            option_a: opt1.trim(),
-            option_b: opt2.trim(),
-            option_c: opt3.trim(),
-            option_d: opt4.trim(),
-            correct_option: correct
-          });
-        });
-
-        if (errors.length > 0) {
-          alert(`CSV Validation Failed:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...and more' : ''}`);
-          window.showToast('Failed to validate CSV structure.', 'error');
-          resetImportButton();
-          return;
-        }
-
-        importCsvBtn.textContent = 'Importing...';
-
-        try {
-          const { error } = await window.supabaseClient
-            .from('question_bank')
-            .insert(validRows);
-
-          if (error) throw error;
-
-          window.showToast(`Successfully imported ${validRows.length} questions!`, 'success');
-          toggleForm(false);
-          fetchQuestions();
-        } catch (err) {
-          console.error('Error bulk importing questions:', err);
-          window.showToast(err.message || 'Failed to import CSV questions.', 'error');
-        } finally {
-          resetImportButton();
-        }
-      },
-      error: (err) => {
-        console.error('CSV Parsing Error:', err);
-        window.showToast('Error parsing CSV file.', 'error');
-        resetImportButton();
-      }
-    });
-  });
-
-  // CSV Paste Import feature
-  btnPasteImport.addEventListener('click', async () => {
-    const rawText = csvPasteInput.value.trim();
-    if (!rawText) {
-      alert('Please paste some CSV data first.');
-      return;
-    }
-
-    btnPasteImport.disabled = true;
-    const originalBtnHtml = btnPasteImport.innerHTML;
-    btnPasteImport.textContent = 'Parsing...';
-
-    // Check schema dynamically
+    // Inspect schema dynamically
+    let hasType = false;
     let hasChapter = false;
     let hasTopic = false;
     let hasExplanation = false;
 
     try {
-      const { error: chErr } = await window.supabaseClient.from('question_bank').select('chapter').limit(1);
-      hasChapter = !chErr;
-    } catch (e) {}
-
+      const { error } = await window.supabaseClient.from('question_bank').select('type').limit(1);
+      hasType = !error;
+    } catch(e){}
     try {
-      const { error: topErr } = await window.supabaseClient.from('question_bank').select('topic').limit(1);
-      hasTopic = !topErr;
-    } catch (e) {}
-
+      const { error } = await window.supabaseClient.from('question_bank').select('chapter').limit(1);
+      hasChapter = !error;
+    } catch(e){}
     try {
-      const { error: expErr } = await window.supabaseClient.from('question_bank').select('explanation').limit(1);
-      hasExplanation = !expErr;
-    } catch (e) {}
+      const { error } = await window.supabaseClient.from('question_bank').select('topic').limit(1);
+      hasTopic = !error;
+    } catch(e){}
+    try {
+      const { error } = await window.supabaseClient.from('question_bank').select('explanation').limit(1);
+      hasExplanation = !error;
+    } catch(e){}
 
-    Papa.parse(rawText, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (header) => header.trim().toLowerCase(),
-      complete: async (results) => {
-        const rows = results.data;
-        if (rows.length === 0) {
-          alert('No CSV data found in the input.');
-          resetPasteButton();
-          return;
-        }
+    const validRows = [];
+    const errors = [];
 
-        const validRows = [];
-        const errors = [];
+    parsedData.forEach((row, index) => {
+      const rowNum = index + 2; // header is row 1
+      const qTypeRaw = row['type'];
+      const question = row['question'];
+      const opt1 = row['option1'];
+      const opt2 = row['option2'];
+      const opt3 = row['option3'];
+      const opt4 = row['option4'];
+      const correctOption = row['correct_option'];
+      const subject = row['subject'];
 
-        rows.forEach((row, index) => {
-          const rowNum = index + 2; // header is row 1
-          const question = row['question'];
-          const opt1 = row['option1'];
-          const opt2 = row['option2'];
-          const opt3 = row['option3'];
-          const opt4 = row['option4'];
-          const correctOption = row['correct_option'];
-          const subject = row['subject'];
-
-          if (!question || !opt1 || !opt2 || !opt3 || !opt4 || !correctOption) {
-            errors.push(`Row ${rowNum}: Missing required fields (question, options, or correct_option).`);
-            return;
-          }
-
-          const correct = correctOption.trim().toLowerCase();
-          if (correct !== 'a' && correct !== 'b' && correct !== 'c' && correct !== 'd') {
-            errors.push(`Row ${rowNum}: Invalid correct_option "${correctOption}". Must be a, b, c, or d.`);
-            return;
-          }
-
-          const syllabusTag = (subject && subject.trim()) ? subject.trim() : 'General';
-
-          const mappedRow = {
-            teacher_id: user.id,
-            syllabus_tag: syllabusTag,
-            question_text: question.trim(),
-            option_a: opt1.trim(),
-            option_b: opt2.trim(),
-            option_c: opt3.trim(),
-            option_d: opt4.trim(),
-            correct_option: correct
-          };
-
-          // Conditional fields if they exist in schema and row
-          if (hasChapter && 'chapter' in row) {
-            mappedRow.chapter = row['chapter'] ? row['chapter'].trim() : null;
-          }
-          if (hasTopic && 'topic' in row) {
-            mappedRow.topic = row['topic'] ? row['topic'].trim() : null;
-          }
-          if (hasExplanation) {
-            if ('correct_answer_logic' in row) {
-              mappedRow.explanation = row['correct_answer_logic'] ? row['correct_answer_logic'].trim() : null;
-            } else if ('explanation' in row) {
-              mappedRow.explanation = row['explanation'] ? row['explanation'].trim() : null;
-            }
-          }
-
-          validRows.push(mappedRow);
-        });
-
-        if (errors.length > 0) {
-          alert(`CSV Validation Failed:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...and more' : ''}`);
-          resetPasteButton();
-          return;
-        }
-
-        btnPasteImport.textContent = 'Importing...';
-
-        try {
-          const { error } = await window.supabaseClient
-            .from('question_bank')
-            .insert(validRows);
-
-          if (error) throw error;
-
-          alert(`Successfully imported ${validRows.length} questions!`);
-          csvPasteInput.value = '';
-          toggleForm(false);
-          fetchQuestions();
-        } catch (err) {
-          console.error('Error importing pasted CSV:', err);
-          alert(err.message || 'Failed to import questions. Please check console.');
-        } finally {
-          resetPasteButton();
-        }
-      },
-      error: (err) => {
-        console.error('CSV Parsing Error:', err);
-        alert('Error parsing CSV input. Please make sure it is valid CSV format.');
-        resetPasteButton();
+      if (!question || !correctOption) {
+        errors.push(`Row ${rowNum}: Missing required fields (question or correct_option).`);
+        return;
       }
+
+      // Determine type: default to MCQ
+      let qType = 'MCQ';
+      if (qTypeRaw && qTypeRaw.trim()) {
+        const t = qTypeRaw.trim().toUpperCase();
+        if (t === 'FIB' || t === 'FILL IN THE BLANK') {
+          qType = 'FIB';
+        } else if (t === 'SHORT ANSWER' || t === 'SA' || t === 'SHORTANSWER') {
+          qType = 'Short Answer';
+        } else {
+          qType = 'MCQ';
+        }
+      }
+
+      // Check MCQ requirements
+      if (qType === 'MCQ') {
+        if (!opt1 || !opt2 || !opt3 || !opt4) {
+          errors.push(`Row ${rowNum}: MCQ type requires option1 through option4.`);
+          return;
+        }
+        const correct = correctOption.trim().toUpperCase();
+        if (correct !== 'A' && correct !== 'B' && correct !== 'C' && correct !== 'D') {
+          errors.push(`Row ${rowNum}: MCQ correct_option must be A, B, C, or D.`);
+          return;
+        }
+      }
+
+      const correctVal = correctOption.trim().toLowerCase();
+      const syllabusTag = (subject && subject.trim()) ? subject.trim() : 'General';
+
+      const mappedRow = {
+        teacher_id: user.id,
+        syllabus_tag: syllabusTag,
+        question_text: question.trim(),
+        correct_option: correctVal
+      };
+
+      if (hasType) {
+        mappedRow.type = qType;
+      }
+
+      if (qType === 'MCQ') {
+        mappedRow.option_a = opt1.trim();
+        mappedRow.option_b = opt2.trim();
+        mappedRow.option_c = opt3.trim();
+        mappedRow.option_d = opt4.trim();
+      } else {
+        mappedRow.option_a = null;
+        mappedRow.option_b = null;
+        mappedRow.option_c = null;
+        mappedRow.option_d = null;
+      }
+
+      // Conditional schema fields
+      if (hasChapter && 'chapter' in row) {
+        mappedRow.chapter = row['chapter'] ? row['chapter'].trim() : null;
+      }
+      if (hasTopic && 'topic' in row) {
+        mappedRow.topic = row['topic'] ? row['topic'].trim() : null;
+      }
+      if (hasExplanation) {
+        if ('correct_answer_logic' in row) {
+          mappedRow.explanation = row['correct_answer_logic'] ? row['correct_answer_logic'].trim() : null;
+        } else if ('explanation' in row) {
+          mappedRow.explanation = row['explanation'] ? row['explanation'].trim() : null;
+        }
+      }
+
+      validRows.push(mappedRow);
     });
 
-    function resetPasteButton() {
-      btnPasteImport.disabled = false;
-      btnPasteImport.innerHTML = originalBtnHtml;
+    if (errors.length > 0) {
+      alert(`CSV Validation Failed:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...and more' : ''}`);
+      window.showToast('Failed to validate CSV structure.', 'error');
+      return;
+    }
+
+    try {
+      const { error } = await window.supabaseClient
+        .from('question_bank')
+        .insert(validRows);
+
+      if (error) throw error;
+
+      alert(`Successfully imported ${validRows.length} questions!`);
+      window.showToast(`Successfully imported ${validRows.length} questions!`, 'success');
+      
+      // Reset inputs
+      csvFileInput.value = '';
+      csvPasteInput.value = '';
+      toggleForm(false);
+      fetchQuestions();
+    } catch (err) {
+      console.error('Error bulk importing questions:', err);
+      alert(err.message || 'Failed to import CSV questions.');
+      window.showToast(err.message || 'Failed to import CSV questions.', 'error');
+    }
+  }
+
+  // Unified Import Button Click Listener
+  importCsvBtn.addEventListener('click', () => {
+    if (importMode === 'file') {
+      const file = csvFileInput.files[0];
+      if (!file) {
+        window.showToast('Please select a CSV file first.', 'error');
+        return;
+      }
+
+      importCsvBtn.disabled = true;
+      const originalHtml = importCsvBtn.innerHTML;
+      importCsvBtn.textContent = 'Parsing...';
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim().toLowerCase(),
+        complete: async (results) => {
+          await processCSVData(results.data, file.name);
+          resetImportBtn(originalHtml);
+        },
+        error: (err) => {
+          console.error('CSV Parsing Error:', err);
+          window.showToast('Error parsing CSV file.', 'error');
+          resetImportBtn(originalHtml);
+        }
+      });
+    } else {
+      // Paste Mode
+      const rawText = csvPasteInput.value.trim();
+      if (!rawText) {
+        alert('Please paste some CSV data first.');
+        return;
+      }
+
+      importCsvBtn.disabled = true;
+      const originalHtml = importCsvBtn.innerHTML;
+      importCsvBtn.textContent = 'Parsing...';
+
+      Papa.parse(rawText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim().toLowerCase(),
+        complete: async (results) => {
+          await processCSVData(results.data, 'pasted text');
+          resetImportBtn(originalHtml);
+        },
+        error: (err) => {
+          console.error('CSV Parsing Error:', err);
+          alert('Error parsing CSV input. Please check console.');
+          resetImportBtn(originalHtml);
+        }
+      });
     }
   });
 
-  function resetImportButton() {
+  function resetImportBtn(originalHtml) {
     importCsvBtn.disabled = false;
-    importCsvBtn.innerHTML = `
-      <i data-lucide="upload-cloud" class="w-4 h-4"></i>
-      Upload and Import
-    `;
+    importCsvBtn.innerHTML = originalHtml;
     window.lucide.createIcons();
   }
 

@@ -121,6 +121,67 @@
       </div>
     </div>
 
+    <!-- AI Grading Workflow Panel -->
+    <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-8 shadow-sm animate-slide-up">
+      <h2 class="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+        <i data-lucide="sparkles" class="w-4 h-4 text-purple-600 animate-pulse"></i>
+        AI Grading Workflow
+      </h2>
+      <p class="text-xs text-slate-500 mb-4">
+        Export student responses for this quiz, feed them to ChatGPT/DeepSeek, and paste the graded results back to update grades in bulk.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Export Section -->
+        <div class="space-y-3 border-b md:border-b-0 md:border-r border-slate-100 pb-6 md:pb-0 md:pr-6 flex flex-col justify-between">
+          <div>
+            <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <span class="flex items-center justify-center w-5 h-5 rounded-full bg-purple-50 text-[10px] font-black text-purple-600 border border-purple-100">1</span>
+              Export Student Responses
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">
+              Download a CSV file containing all student answers for the currently filtered quiz.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="btn-export-ai"
+            class="w-full md:w-fit inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold text-xs shadow-sm transition cursor-pointer"
+          >
+            <i data-lucide="download" class="w-4 h-4"></i>
+            Export Responses for AI
+          </button>
+        </div>
+
+        <!-- Import Section -->
+        <div class="space-y-3 flex flex-col justify-between">
+          <div>
+            <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <span class="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-50 text-[10px] font-black text-emerald-600 border border-emerald-100">2</span>
+              Import AI Grades Paste Box
+            </h3>
+            <p class="text-xs text-slate-400 mt-1 mb-2">
+              Paste the graded CSV back from your AI model. Expected columns: <code class="font-mono bg-slate-100 text-[10px] px-1 py-0.5 rounded">response_id, marks_assigned, ai_reasoning</code>
+            </p>
+            <textarea
+              id="ai-grades-paste-input"
+              rows="3"
+              placeholder="response_id,marks_assigned,ai_reasoning&#10;some-uuid,5,Excellent explanation."
+              class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-slate-50/50"
+            ></textarea>
+          </div>
+          <button
+            type="button"
+            id="btn-import-ai-grades"
+            class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs shadow-sm transition cursor-pointer"
+          >
+            <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+            Process and Import AI Grades
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Results Table / Empty State Container -->
     <div id="reports-container">
       <div class="py-24 flex justify-center items-center">
@@ -132,6 +193,7 @@
 
   <!-- CDNs for JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="config.js"></script>
   <script src="js/auth.js"></script>

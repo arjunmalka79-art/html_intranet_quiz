@@ -284,6 +284,220 @@ document.addEventListener('DOMContentLoaded', async () => {
     filterAndRender();
   });
 
+  // AI Grading Sheet Workflow
+  const btnExportAi = document.getElementById('btn-export-ai');
+  const btnImportAiGrades = document.getElementById('btn-import-ai-grades');
+  const aiGradesPasteInput = document.getElementById('ai-grades-paste-input');
+
+  // 1. Export Responses for AI
+  btnExportAi.addEventListener('click', async () => {
+    if (selectedQuizId === 'all') {
+      alert('Please select a specific quiz from the dropdown filter to export responses.');
+      return;
+    }
+
+    btnExportAi.disabled = true;
+    const originalHtml = btnExportAi.innerHTML;
+    btnExportAi.textContent = 'Fetching...';
+
+    try {
+      // Fetch responses for this quiz
+      const { data, error } = await window.supabaseClient
+        .from('student_responses')
+        .select('*')
+        .eq('quiz_id', selectedQuizId)
+        .order('student_name', { ascending: true });
+
+      if (error) {
+        if (error.code === 'PGRST205' || error.message.includes('not find the table')) {
+          throw new Error("The 'student_responses' table does not exist in your Supabase database. Please execute the updated SQL script in supabase_schema.sql first.");
+        }
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        alert('No detailed responses found for this quiz. Note: responses are only tracked for new quiz submissions completed after this feature was added.');
+        return;
+      }
+
+      // Convert responses to CSV
+      // Headers: response_id, student_name, question_text, student_answer, question_type
+      const csvRows = [
+        ['response_id', 'student_name', 'question_text', 'student_answer', 'question_type']
+      ];
+
+      data.forEach((r) => {
+        csvRows.push([
+          r.id,
+          r.student_name,
+          r.question_text,
+          r.student_answer,
+          r.question_type || 'MCQ'
+        ]);
+      });
+
+      // Escape fields and join with CSV format
+      const csvContent = csvRows
+        .map((row) =>
+          row
+            .map((val) => {
+              const escaped = (val || '').toString().replace(/"/g, '""');
+              return `"${escaped}"`;
+            })
+            .join(',')
+        )
+        .join('\n');
+
+      // Download trigger
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      const selectedQuiz = quizzes.find((q) => q.id === selectedQuizId);
+      const quizTitle = selectedQuiz ? selectedQuiz.title.replace(/[^a-z0-9]/gi, '_') : 'Quiz';
+      link.setAttribute('download', `Responses_${quizTitle}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.showToast('Exported student responses successfully!', 'success');
+    } catch (err) {
+      console.error('Error exporting responses:', err);
+      alert(err.message || 'Failed to export responses. Check console for details.');
+    } finally {
+      btnExportAi.disabled = false;
+      btnExportAi.innerHTML = originalHtml;
+      window.lucide.createIcons();
+    }
+  });
+
+  // 2. Import AI Grades Paste Box
+  btnImportAiGrades.addEventListener('click', () => {
+    const rawText = aiGradesPasteInput.value.trim();
+    if (!rawText) {
+      alert('Please paste the graded CSV first.');
+      return;
+    }
+
+    btnImportAiGrades.disabled = true;
+    const originalHtml = btnImportAiGrades.innerHTML;
+    btnImportAiGrades.textContent = 'Parsing...';
+
+    // PapaParse the pasted CSV text
+    Papa.parse(rawText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim().toLowerCase(),
+      complete: async (results) => {
+        const rows = results.data;
+        if (rows.length === 0) {
+          alert('No grading rows found in the pasted CSV.');
+          resetImportBtn();
+          return;
+        }
+
+        const validGrades = [];
+        const errors = [];
+
+        rows.forEach((row, idx) => {
+          const rowNum = idx + 2;
+          const responseId = row['response_id'];
+          const marksAssignedRaw = row['marks_assigned'];
+          const aiReasoning = row['ai_reasoning'] || '';
+
+          if (!responseId || marksAssignedRaw === undefined || marksAssignedRaw === null) {
+            errors.push(`Row ${rowNum}: Missing response_id or marks_assigned.`);
+            return;
+          }
+
+          const marks = parseInt(marksAssignedRaw, 10);
+          if (isNaN(marks)) {
+            errors.push(`Row ${rowNum}: Invalid marks_assigned (must be a number).`);
+            return;
+          }
+
+          validGrades.push({
+            id: responseId.trim(),
+            marks_assigned: marks,
+            ai_reasoning: aiReasoning.trim()
+          });
+        });
+
+        if (errors.length > 0) {
+          alert(`CSV Validation Failed:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...and more' : ''}`);
+          resetImportBtn();
+          return;
+        }
+
+        btnImportAiGrades.textContent = 'Updating Database...';
+
+        try {
+          // Perform bulk update of student_responses in Supabase
+          const updatePromises = validGrades.map(async (grade) => {
+            const { data, error } = await window.supabaseClient
+              .from('student_responses')
+              .update({
+                marks_assigned: grade.marks_assigned,
+                ai_reasoning: grade.ai_reasoning
+              })
+              .eq('id', grade.id)
+              .select('student_result_id');
+            if (error) throw error;
+            return data && data[0] ? data[0].student_result_id : null;
+          });
+
+          const resultIds = await Promise.all(updatePromises);
+          
+          // Get unique student result IDs to update overall scores
+          const uniqueResultIds = Array.from(new Set(resultIds.filter((id) => id)));
+
+          if (uniqueResultIds.length > 0) {
+            const sumPromises = uniqueResultIds.map(async (resultId) => {
+              const { data: respData, error: respErr } = await window.supabaseClient
+                .from('student_responses')
+                .select('marks_assigned')
+                .eq('student_result_id', resultId);
+
+              if (respErr) throw respErr;
+
+              if (respData && respData.length > 0) {
+                const totalScore = respData.reduce((sum, r) => sum + (r.marks_assigned || 0), 0);
+                await window.supabaseClient
+                  .from('student_results')
+                  .update({ score: totalScore })
+                  .eq('id', resultId);
+              }
+            });
+
+            await Promise.all(sumPromises);
+          }
+
+          alert(`Successfully imported grades for ${validGrades.length} responses! Student total scores have been recalculated.`);
+          window.showToast(`Imported ${validGrades.length} grades successfully!`, 'success');
+          
+          aiGradesPasteInput.value = '';
+          loadReportData(); // reload UI list to display the new grades
+        } catch (err) {
+          console.error('Error updating AI grades:', err);
+          alert(err.message || 'Failed to update grades. Check console for details.');
+        } finally {
+          resetImportBtn();
+        }
+      },
+      error: (err) => {
+        console.error('CSV Parsing Error:', err);
+        alert('Error parsing pasted CSV input. Make sure it has valid headers.');
+        resetImportBtn();
+      }
+    });
+
+    function resetImportBtn() {
+      btnImportAiGrades.disabled = false;
+      btnImportAiGrades.innerHTML = originalHtml;
+      window.lucide.createIcons();
+    }
+  });
+
   // Run initialization
   loadReportData();
 });

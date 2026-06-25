@@ -13,13 +13,14 @@ create table public.profiles (
 create table public.question_bank (
     id uuid default uuid_generate_v4() primary key,
     teacher_id uuid references public.profiles(id) on delete cascade not null,
+    type text not null default 'MCQ', -- 'MCQ', 'FIB', or 'Short Answer'
     syllabus_tag text not null,
     question_text text not null,
-    option_a text not null,
-    option_b text not null,
-    option_c text not null,
-    option_d text not null,
-    correct_option text not null, -- 'A', 'B', 'C', or 'D'
+    option_a text, -- nullable for FIB / Short Answer
+    option_b text, -- nullable for FIB / Short Answer
+    option_c text, -- nullable for FIB / Short Answer
+    option_d text, -- nullable for FIB / Short Answer
+    correct_option text not null, -- 'A', 'B', 'C', or 'D' for MCQ, text for FIB/Short Answer
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -113,4 +114,30 @@ create policy "Students can insert results"
 -- teachers should further scope to their own quiz IDs on the client.
 create policy "Authenticated users can read results"
   on public.student_results for select
+  using (auth.role() = 'authenticated');
+
+-- 6. Student Responses Table (For individual answers & AI grading workflow)
+create table public.student_responses (
+    id uuid default uuid_generate_v4() primary key,
+    quiz_id uuid references public.quizzes(id) on delete cascade not null,
+    student_result_id uuid references public.student_results(id) on delete cascade,
+    student_name text not null,
+    question_text text not null,
+    student_answer text not null,
+    question_type text not null default 'MCQ', -- 'MCQ', 'FIB', or 'Short Answer'
+    marks_assigned integer,
+    ai_reasoning text,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Enable RLS on student_responses
+alter table public.student_responses enable row level security;
+
+-- Student Responses RLS Policies
+create policy "Students can insert responses"
+  on public.student_responses for insert
+  with check (true);
+
+create policy "Authenticated users can manage student responses"
+  on public.student_responses for all
   using (auth.role() = 'authenticated');

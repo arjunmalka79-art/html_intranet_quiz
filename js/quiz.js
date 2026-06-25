@@ -307,14 +307,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       // 2. Insert to Supabase student_results
-      const { error } = await window.supabaseClient.from('student_results').insert({
+      const { data: resultData, error: resultError } = await window.supabaseClient.from('student_results').insert({
         quiz_id: quiz.id,
         student_name: studentName,
         score: finalScore,
         total_questions: questions.length,
+      }).select();
+
+      if (resultError) throw resultError;
+
+      const studentResultId = resultData && resultData[0] ? resultData[0].id : null;
+
+      // 3. Prepare responses payload
+      const responsesPayload = questions.map((q) => {
+        const studentAns = answers[q.id] || '';
+        return {
+          quiz_id: quiz.id,
+          student_result_id: studentResultId,
+          student_name: studentName,
+          question_text: q.question_text,
+          student_answer: studentAns,
+          question_type: q.type || 'MCQ',
+          marks_assigned: null,
+          ai_reasoning: null
+        };
       });
 
-      if (error) throw error;
+      // Insert responses
+      if (responsesPayload.length > 0) {
+        const { error: respError } = await window.supabaseClient.from('student_responses').insert(responsesPayload);
+        if (respError) {
+          console.error('Error inserting student responses. Please make sure the student_responses table exists in Supabase. Error:', respError);
+        }
+      }
 
       window.showToast('Quiz completed and submitted successfully!', 'success');
 

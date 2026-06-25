@@ -153,55 +153,67 @@
               Import from CSV
             </h2>
             <p class="text-slate-600 text-xs mb-4">
-              Add multiple questions at once by uploading a CSV. The expected columns must be exactly:
+              Add multiple questions at once by uploading a CSV or pasting raw text.
             </p>
             <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 font-mono text-[10px] text-slate-700 mb-4 overflow-x-auto space-y-1">
               <strong>Expected Header Columns:</strong>
-              <div>question, option1, option2, option3, option4, correct_option, subject</div>
-              <div class="text-[9px] text-slate-400 mt-2">Note: correct_option values must be 'A', 'B', 'C', or 'D' (case-insensitive).</div>
+              <div>type, question, option1, option2, option3, option4, correct_option, subject</div>
+              <div class="text-[9px] text-slate-400 mt-2">Note: type can be 'MCQ', 'FIB', or 'Short Answer'. Option columns A-D can be blank for FIB and Short Answer.</div>
             </div>
 
-            <!-- CSV Upload Input -->
-            <div class="space-y-4">
+            <!-- Mode Toggle Switch -->
+            <div class="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-semibold">
+              <button
+                type="button"
+                id="toggle-mode-file"
+                class="flex-1 py-1.5 rounded-lg text-center transition-all bg-white text-slate-800 shadow-sm cursor-pointer"
+              >
+                Upload File
+              </button>
+              <button
+                type="button"
+                id="toggle-mode-paste"
+                class="flex-1 py-1.5 rounded-lg text-center transition-all text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Paste Text Block
+              </button>
+            </div>
+
+            <!-- Wrapper for File Upload -->
+            <div id="wrapper-file-input" class="space-y-4">
               <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1">Select CSV File</label>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Select CSV File</label>
                 <input 
                   type="file" 
                   id="csv-file-input" 
                   accept=".csv"
-                  class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl p-2 bg-white"
+                  class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl p-2 bg-white"
                 />
               </div>
             </div>
 
-            <!-- Paste CSV Input -->
-            <div class="border-t border-slate-200 mt-4 pt-4">
-              <label class="block text-xs font-semibold text-slate-700 mb-1">📋 Copy-Paste CSV from ChatGPT/DeepSeek</label>
-              <textarea 
-                id="csvPasteInput" 
-                rows="4" 
-                placeholder="question,option1,option2,option3,option4,correct_option,subject&#10;What is 2+2?,3,4,5,6,B,Math"
-                class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50/50"
-              ></textarea>
+            <!-- Wrapper for Text Paste -->
+            <div id="wrapper-paste-input" class="hidden space-y-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">📋 Copy-Paste CSV from ChatGPT/DeepSeek</label>
+                <textarea 
+                  id="csvPasteInput" 
+                  rows="5" 
+                  placeholder="type,question,option1,option2,option3,option4,correct_option,subject&#10;MCQ,What is 2+2?,3,4,5,6,B,Math&#10;FIB,Water formula?,option1,option2,option3,option4,H2O,Science"
+                  class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50/50"
+                ></textarea>
+              </div>
             </div>
           </div>
 
-          <div class="pt-4 space-y-2">
+          <div class="pt-6">
             <button
               type="button"
               id="import-csv-btn"
               class="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition shadow-sm shadow-emerald-100 disabled:opacity-50 cursor-pointer"
             >
               <i data-lucide="upload-cloud" class="w-4 h-4"></i>
-              Upload and Import
-            </button>
-            <button
-              type="button"
-              id="btnPasteImport"
-              class="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition shadow-sm shadow-blue-100 disabled:opacity-50 cursor-pointer"
-            >
-              <i data-lucide="clipboard" class="w-4 h-4"></i>
-              Paste and Import
+              <span id="import-btn-text">Process and Import File</span>
             </button>
           </div>
         </div>
