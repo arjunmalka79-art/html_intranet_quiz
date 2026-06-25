@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const wrapperFileInput = document.getElementById('wrapper-file-input');
   const wrapperPasteInput = document.getElementById('wrapper-paste-input');
   const importBtnText = document.getElementById('import-btn-text');
+  const copyAiPromptBtn = document.getElementById('copy-ai-prompt-btn');
 
   // Toggle form panel
   let showForm = false;
@@ -78,6 +79,44 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   toggleModeFile.addEventListener('click', () => setImportMode('file'));
   toggleModePaste.addEventListener('click', () => setImportMode('paste'));
+
+  // Copy AI Prompt feature
+  if (copyAiPromptBtn) {
+    copyAiPromptBtn.addEventListener('click', async () => {
+      const promptText = `Act as an expert school teacher. Create a 5-question quiz for [Class/Subject] on the topic "[Topic]". 
+
+Output ONLY a raw CSV block. Do not include markdown brackets (\`\`\`) or any introductory text.
+
+Use these exact headers in the first row:
+type,question,option1,option2,option3,option4,correct_option,subject
+
+Rules:
+1. 'type' can be: MCQ, FIB, or Short Answer.
+2. For MCQ: Fill in option1 to option4. 'correct_option' must be A, B, C, or D.
+3. For FIB & Short Answer: Leave option1, option2, option3, and option4 completely blank. Put the actual text answer inside 'correct_option'.`;
+
+      try {
+        await navigator.clipboard.writeText(promptText);
+        
+        // Visual feedback
+        const originalHtml = copyAiPromptBtn.innerHTML;
+        copyAiPromptBtn.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i> Copied!';
+        copyAiPromptBtn.classList.remove('bg-blue-50', 'text-blue-600', 'hover:bg-blue-100');
+        copyAiPromptBtn.classList.add('bg-emerald-50', 'text-emerald-600', 'hover:bg-emerald-100');
+        window.lucide.createIcons();
+
+        setTimeout(() => {
+          copyAiPromptBtn.innerHTML = originalHtml;
+          copyAiPromptBtn.classList.remove('bg-emerald-50', 'text-emerald-600', 'hover:bg-emerald-100');
+          copyAiPromptBtn.classList.add('bg-blue-50', 'text-blue-600', 'hover:bg-blue-100');
+          window.lucide.createIcons();
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy prompt:', err);
+        window.showToast('Failed to copy prompt to clipboard', 'error');
+      }
+    });
+  }
 
   toggleAddFormBtn.addEventListener('click', () => toggleForm());
   cancelFormBtn.addEventListener('click', () => toggleForm(false));
@@ -482,11 +521,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
+      // Strip markdown code block wrapping (like ```csv ... ```)
+      const cleanedText = rawText.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+
       importCsvBtn.disabled = true;
       const originalHtml = importCsvBtn.innerHTML;
       importCsvBtn.textContent = 'Parsing...';
 
-      Papa.parse(rawText, {
+      Papa.parse(cleanedText, {
         header: true,
         skipEmptyLines: true,
         transformHeader: (header) => header.trim().toLowerCase(),

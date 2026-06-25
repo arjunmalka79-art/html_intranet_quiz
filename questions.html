@@ -156,7 +156,17 @@
               Add multiple questions at once by uploading a CSV or pasting raw text.
             </p>
             <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 font-mono text-[10px] text-slate-700 mb-4 overflow-x-auto space-y-1">
-              <strong>Expected Header Columns:</strong>
+              <div class="flex justify-between items-center mb-1">
+                <strong>Expected Header Columns:</strong>
+                <button
+                  type="button"
+                  id="copy-ai-prompt-btn"
+                  class="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] hover:bg-blue-100 transition cursor-pointer flex items-center gap-1"
+                >
+                  <i data-lucide="clipboard" class="w-3 h-3"></i>
+                  Copy AI Prompt
+                </button>
+              </div>
               <div>type, question, option1, option2, option3, option4, correct_option, subject</div>
               <div class="text-[9px] text-slate-400 mt-2">Note: type can be 'MCQ', 'FIB', or 'Short Answer'. Option columns A-D can be blank for FIB and Short Answer.</div>
             </div>
