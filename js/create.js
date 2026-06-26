@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let questions = [];
   let selectedQuestionIds = [];
   let selectedTagFilter = 'all';
+  const urlParams = new URLSearchParams(window.location.search);
+  const editQuizId = urlParams.get('edit');
+  let originalQuizData = null;
 
   const quizTitleInput = document.getElementById('quiz-title');
   const quizRoundsInput = document.getElementById('quiz-rounds');
@@ -35,6 +38,46 @@ document.addEventListener('DOMContentLoaded', async () => {
   quizCodeInput.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
   });
+
+  // Load Quiz for Edit
+  async function loadQuizForEdit() {
+    try {
+      const { data: quizData, error: quizError } = await window.supabaseClient
+        .from('quizzes')
+        .select('*')
+        .eq('id', editQuizId)
+        .single();
+
+      if (quizError) throw quizError;
+      
+      originalQuizData = quizData;
+      
+      // Pre-fill form fields
+      quizTitleInput.value = quizData.title;
+      quizRoundsInput.value = quizData.rounds;
+      quizDurationInput.value = quizData.duration_minutes;
+      quizCodeInput.value = quizData.access_code;
+      quizRandomizeInput.checked = quizData.is_random;
+      
+      // Update button text
+      submitQuizBtn.textContent = 'Update Quiz';
+      
+      // Get junction data to pre-select questions
+      const { data: junctionData, error: junctionError } = await window.supabaseClient
+        .from('quiz_questions')
+        .select('question_bank_id')
+        .eq('quiz_id', editQuizId);
+
+      if (junctionError) throw junctionError;
+
+      selectedQuestionIds = junctionData.map((item) => item.question_bank_id);
+      selectedCountBadge.textContent = selectedQuestionIds.length;
+      
+    } catch (err) {
+      console.error('Error loading quiz for edit:', err);
+      window.showToast('Failed to load quiz for editing', 'error');
+    }
+  }
 
   // Fetch Questions
   async function fetchQuestions() {
@@ -205,7 +248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderQuestions();
   });
 
-  // Submit and Create Quiz
+  // Submit and Create/Update Quiz
   createForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -231,62 +274,115 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     submitQuizBtn.disabled = true;
-    submitQuizBtn.textContent = 'Creating Quiz...';
+    submitQuizBtn.textContent = editQuizId ? 'Updating Quiz...' : 'Creating Quiz...';
 
     try {
-      // 1. Check if access code is unique (global check)
-      const { data: codeCheck, error: checkError } = await window.supabaseClient
-        .from('quizzes')
-        .select('id')
-        .eq('access_code', accessCode);
+      // 1. Check if access code is unique (if it changed or we're creating)
+      if (!editQuizId || accessCode !== originalQuizData.access_code) {
+        const { data: codeCheck, error: checkError } = await window.supabaseClient
+          .from('quizzes')
+          .select('id')
+          .eq('access_code', accessCode);
 
-      if (checkError) throw checkError;
+        if (checkError) throw checkError;
 
-      if (codeCheck && codeCheck.length > 0) {
-        window.showToast('Access code already exists. Please generate a new one.', 'error');
-        submitQuizBtn.disabled = false;
-        submitQuizBtn.textContent = 'Assemble & Launch Quiz';
-        return;
+        if (codeCheck && codeCheck.length > 0) {
+          // If editing, make sure the code isn't taken by another quiz
+          if (editQuizId) {
+            const otherQuiz = codeCheck.find((c) => c.id !== editQuizId);
+            if (otherQuiz) {
+              window.showToast('Access code already exists. Please generate a new one.', 'error');
+              submitQuizBtn.disabled = false;
+              submitQuizBtn.textContent = 'Update Quiz';
+              return;
+            }
+          } else {
+            window.showToast('Access code already exists. Please generate a new one.', 'error');
+            submitQuizBtn.disabled = false;
+            submitQuizBtn.textContent = 'Assemble & Launch Quiz';
+            return;
+          }
+        }
       }
 
-      // 2. Insert Quiz
-      const { data: newQuiz, error: quizError } = await window.supabaseClient
-        .from('quizzes')
-        .insert({
-          teacher_id: user.id,
-          title,
-          rounds,
-          question_count: selectedQuestionIds.length,
-          duration_minutes: duration,
-          is_random: isRandom,
-          access_code: accessCode,
-        })
-        .select()
-        .single();
+      if (editQuizId) {
+        // Update existing quiz
+        const { error: quizUpdateError } = await window.supabaseClient
+          .from('quizzes')
+          .update({
+            title,
+            rounds,
+            question_count: selectedQuestionIds.length,
+            duration_minutes: duration,
+            is_random: isRandom,
+            access_code: accessCode,
+          })
+          .eq('id', editQuizId);
 
-      if (quizError) throw quizError;
+        if (quizUpdateError) throw quizUpdateError;
 
-      // 3. Insert junction rows
-      const junctionInserts = selectedQuestionIds.map((qId) => ({
-        quiz_id: newQuiz.id,
-        question_bank_id: qId,
-      }));
+        // Delete old junction rows
+        const { error: deleteJunctionError } = await window.supabaseClient
+          .from('quiz_questions')
+          .delete()
+          .eq('quiz_id', editQuizId);
 
-      const { error: junctionError } = await window.supabaseClient
-        .from('quiz_questions')
-        .insert(junctionInserts);
+        if (deleteJunctionError) throw deleteJunctionError;
 
-      if (junctionError) throw junctionError;
+        // Insert new junction rows
+        const junctionInserts = selectedQuestionIds.map((qId) => ({
+          quiz_id: editQuizId,
+          question_bank_id: qId,
+        }));
 
-      window.showToast('Quiz created successfully!', 'success');
+        const { error: junctionError } = await window.supabaseClient
+          .from('quiz_questions')
+          .insert(junctionInserts);
+
+        if (junctionError) throw junctionError;
+
+        window.showToast('Quiz updated successfully!', 'success');
+      } else {
+        // Insert new quiz
+        const { data: newQuiz, error: quizError } = await window.supabaseClient
+          .from('quizzes')
+          .insert({
+            teacher_id: user.id,
+            title,
+            rounds,
+            question_count: selectedQuestionIds.length,
+            duration_minutes: duration,
+            is_random: isRandom,
+            access_code: accessCode,
+          })
+          .select()
+          .single();
+
+        if (quizError) throw quizError;
+
+        // Insert junction rows
+        const junctionInserts = selectedQuestionIds.map((qId) => ({
+          quiz_id: newQuiz.id,
+          question_bank_id: qId,
+        }));
+
+        const { error: junctionError } = await window.supabaseClient
+          .from('quiz_questions')
+          .insert(junctionInserts);
+
+        if (junctionError) throw junctionError;
+
+        window.showToast('Quiz created successfully!', 'success');
+      }
+
       setTimeout(() => {
         window.location.href = 'dashboard.html';
       }, 800);
     } catch (err) {
-      console.error('Error creating quiz:', err);
-      window.showToast(err.message || 'Failed to create quiz', 'error');
+      console.error('Error creating/updating quiz:', err);
+      window.showToast(err.message || 'Failed to create/update quiz', 'error');
       submitQuizBtn.disabled = false;
-      submitQuizBtn.textContent = 'Assemble & Launch Quiz';
+      submitQuizBtn.textContent = editQuizId ? 'Update Quiz' : 'Assemble & Launch Quiz';
     }
   });
 
@@ -302,6 +398,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Init page
-  generateCode();
-  fetchQuestions();
+  if (!editQuizId) {
+    generateCode();
+  }
+  await fetchQuestions();
+  if (editQuizId) {
+    await loadQuizForEdit();
+    // Re-render questions to show selected state
+    renderQuestions();
+  }
 });

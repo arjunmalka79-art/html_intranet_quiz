@@ -208,29 +208,12 @@ Rules:
 
     let listHtml = '';
     filtered.forEach((q, idx) => {
-      listHtml += `
-        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:border-slate-300 transition duration-150 relative animate-slide-up">
-          <div class="flex justify-between items-start gap-4 mb-3">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">
-                Question #${idx + 1}
-              </span>
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
-                <i data-lucide="tag" class="w-3 h-3"></i>
-                ${escapeHtml(q.syllabus_tag)}
-              </span>
-            </div>
-            <button
-              onclick="window.deleteQuestion('${q.id}')"
-              class="text-slate-400 hover:text-rose-600 transition p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
-              title="Delete Question"
-            >
-              <i data-lucide="trash-2" class="w-4 h-4"></i>
-            </button>
-          </div>
+      let optionsHtml = '';
+      let correctAnswerHtml = '';
 
-          <p class="text-slate-900 font-semibold mb-4 pr-8">${escapeHtml(q.question_text)}</p>
-
+      if (q.type === 'MCQ') {
+        // Show option grid for MCQ
+        optionsHtml = `
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div class="p-3 rounded-xl border text-sm flex gap-2 ${(q.correct_option || '').toUpperCase() === 'A' ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold' : 'border-slate-100 bg-slate-50/50 text-slate-700'}">
               <span class="font-bold text-slate-400">A.</span>
@@ -249,10 +232,50 @@ Rules:
               <span>${escapeHtml(q.option_d)}</span>
             </div>
           </div>
- 
+        `;
+        correctAnswerHtml = `
           <div class="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl w-fit">
             Correct Answer: Option ${(q.correct_option || '').toUpperCase()}
           </div>
+        `;
+      } else {
+        // Show clean text answer for FIB/Short Answer
+        correctAnswerHtml = `
+          <div class="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-4 py-2.5 rounded-xl w-fit">
+            🟢 Correct Answer: ${escapeHtml(q.correct_option || '')}
+          </div>
+        `;
+      }
+
+      listHtml += `
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:border-slate-300 transition duration-150 relative animate-slide-up">
+          <div class="flex justify-between items-start gap-4 mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">
+                Question #${idx + 1}
+              </span>
+              <span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
+                <i data-lucide="tag" class="w-3 h-3"></i>
+                ${escapeHtml(q.syllabus_tag)}
+              </span>
+              <span class="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
+                ${q.type || 'MCQ'}
+              </span>
+            </div>
+            <button
+              onclick="window.deleteQuestion('${q.id}')"
+              class="text-slate-400 hover:text-rose-600 transition p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer"
+              title="Delete Question"
+            >
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <p class="text-slate-900 font-semibold mb-4 pr-8">${escapeHtml(q.question_text)}</p>
+
+          ${optionsHtml}
+
+          ${correctAnswerHtml}
         </div>
       `;
     });
@@ -348,9 +371,9 @@ Rules:
 
     // Filter out rows that are completely empty (PapaParse sometimes adds ghost rows)
     const dataRows = parsedData.filter(row => {
-      const question = row.question || row.question_text || '';
-      const correct = row.correct_option || row['correct_option '] || '';
-      return question.trim() !== '' && correct.trim() !== '';
+      const question = (row.question || row.question_text || '').trim();
+      const correct = (row.correct_option || row['correct_option '] || '').trim();
+      return question !== '' && correct !== '';
     });
 
     if (dataRows.length === 0) {
@@ -359,7 +382,7 @@ Rules:
     }
 
     const recordsToInsert = dataRows.map(row => {
-      const rawType = row.type ? row.type.trim().toUpperCase() : 'MCQ';
+      const rawType = (row.type || '').trim().toUpperCase() || 'MCQ';
 
       let qType = 'MCQ';
       if (rawType === 'FIB' || rawType === 'FILL IN THE BLANK') {
@@ -374,10 +397,10 @@ Rules:
         teacher_id: user.id,
         type: qType,
         question_text: (row.question || row.question_text || '').trim(),
-        option_a: isMCQ ? (row.option1 || null) : null,
-        option_b: isMCQ ? (row.option2 || null) : null,
-        option_c: isMCQ ? (row.option3 || null) : null,
-        option_d: isMCQ ? (row.option4 || null) : null,
+        option_a: (row.option1 || '').trim(),
+        option_b: (row.option2 || '').trim(),
+        option_c: (row.option3 || '').trim(),
+        option_d: (row.option4 || '').trim(),
         correct_option: (row.correct_option || row['correct_option '] || '').trim(),
         syllabus_tag: (row.subject || row.syllabus_tag || 'General').trim()
       };

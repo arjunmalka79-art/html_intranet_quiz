@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let quizzes = [];
   const searchInput = document.getElementById('search-quizzes');
   const contentArea = document.getElementById('content-area');
+  const analyticsModal = document.getElementById('analytics-modal');
+  const closeAnalyticsModal = document.getElementById('close-analytics-modal');
+  const analyticsContent = document.getElementById('analytics-content');
 
   // Fetch quizzes
   async function fetchQuizzes() {
@@ -105,7 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
 
             <!-- Badges -->
-            <div class="flex flex-wrap gap-2 mb-6">
+            <div class="flex flex-wrap gap-2 mb-4">
               <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-100">
                 ${quiz.rounds} ${quiz.rounds === 1 ? 'Round' : 'Rounds'}
               </span>
@@ -121,6 +124,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                   Random
                 </span>
               ` : ''}
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-2 mb-4">
+              <button
+                onclick="window.location.href = 'create.html?edit=${quiz.id}'"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-xs font-semibold text-slate-600 hover:text-blue-700 transition-all cursor-pointer"
+              >
+                <i data-lucide="edit" class="w-3 h-3"></i>
+                Edit
+              </button>
+              <button
+                onclick="window.deleteQuiz('${quiz.id}')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-700 transition-all cursor-pointer"
+              >
+                <i data-lucide="trash-2" class="w-3 h-3"></i>
+                Delete
+              </button>
+              <button
+                onclick="window.openAnalytics('${quiz.id}', '${escapeHtml(quiz.title)}')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-xs font-semibold text-slate-600 hover:text-emerald-700 transition-all cursor-pointer"
+              >
+                <i data-lucide="bar-chart-3" class="w-3 h-3"></i>
+                Analytics
+              </button>
             </div>
           </div>
 
@@ -169,6 +197,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('retry-btn').addEventListener('click', fetchQuizzes);
   }
 
+  // Delete Quiz
+  window.deleteQuiz = async (quizId) => {
+    if (!confirm('Are you sure you want to delete this quiz? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      const { error } = await window.supabaseClient
+        .from('quizzes')
+        .delete()
+        .eq('id', quizId);
+      if (error) throw error;
+      window.showToast('Quiz deleted successfully', 'success');
+      fetchQuizzes();
+    } catch (err) {
+      console.error('Error deleting quiz:', err);
+      window.showToast(err.message || 'Failed to delete quiz', 'error');
+    }
+  };
+
+  // Open Analytics Modal
+  window.openAnalytics = async (quizId, quizTitle) => {
+    analyticsModal.classList.remove('hidden');
+    analyticsContent.innerHTML = `
+      <div class="py-8 flex flex-col justify-center items-center">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+        <p class="text-slate-500 text-sm">Loading analytics...</p>
+      </div>
+    `;
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('student_results')
+        .select('*')
+        .eq('quiz_id', quizId)
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
+      
+      const results = data || [];
+      let analyticsHtml = `
+        <h4 class="text-sm font-semibold text-slate-700 mb-4">${escapeHtml(quizTitle)} - ${results.length} Attempt${results.length !== 1 ? 's' : ''}</h4>
+      `;
+      if (results.length === 0) {
+        analyticsHtml += `
+          <div class="text-center py-8 text-slate-500 text-sm">
+            No student attempts yet for this quiz.
+          </div>
+        `;
+      } else {
+        analyticsHtml += `
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-4 py-2 text-left text-slate-600 font-semibold text-xs uppercase">Student</th>
+                  <th class="px-4 py-2 text-left text-slate-600 font-semibold text-xs uppercase">Score</th>
+                  <th class="px-4 py-2 text-left text-slate-600 font-semibold text-xs uppercase">Completed</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+        `;
+        results.forEach(result => {
+          const formattedDate = new Date(result.completed_at).toLocaleString('en-GB', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          const scorePercent = Math.round((result.score / result.total_questions) * 100);
+          analyticsHtml += `
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 text-slate-900">${escapeHtml(result.student_name)}</td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${scorePercent >= 70 ? 'bg-emerald-50 text-emerald-700' : scorePercent >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}">
+                  ${result.score}/${result.total_questions} (${scorePercent}%)
+                </span>
+              </td>
+              <td class="px-4 py-3 text-slate-600">${formattedDate}</td>
+            </tr>
+          `;
+        });
+        analyticsHtml += `
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+      analyticsContent.innerHTML = analyticsHtml;
+    } catch (err) {
+      console.error('Error loading analytics:', err);
+      analyticsContent.innerHTML = `
+        <div class="text-center py-8 text-rose-600 text-sm">
+          Failed to load analytics. ${escapeHtml(err.message)}
+        </div>
+      `;
+    }
+  };
+
   // Real-time Search Handler
   searchInput.addEventListener('input', () => {
     const query = searchInput.value.toLowerCase().trim();
@@ -203,6 +328,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('Failed to copy', err);
     }
   };
+
+  // Close analytics modal
+  closeAnalyticsModal.addEventListener('click', () => {
+    analyticsModal.classList.add('hidden');
+  });
+
+  // Close analytics modal when clicking outside
+  analyticsModal.addEventListener('click', (e) => {
+    if (e.target === analyticsModal) {
+      analyticsModal.classList.add('hidden');
+    }
+  });
 
   // Helper function to escape HTML
   function escapeHtml(str) {

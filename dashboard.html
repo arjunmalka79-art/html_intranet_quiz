@@ -100,6 +100,23 @@
     </div>
   </main>
 
+
+
+  <!-- Analytics Modal -->
+  <div id="analytics-modal" class="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto animate-slide-up">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-lg font-bold text-slate-900">Quiz Analytics</h3>
+        <button id="close-analytics-modal" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="analytics-content">
+        <!-- Dynamic content -->
+      </div>
+    </div>
+  </div>
+
   <!-- CDNs for JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
