@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('🔍 [Reports] Fetching teacher quizzes...');
       const { data: quizzesData, error: quizzesError } = await window.supabaseClient
         .from('quizzes')
-        .select('id, title, access_code')
+        .select('id, title, access_code, randomize_questions, is_random, question_count')
         .eq('teacher_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('🔍 [Reports] Fetching student results...');
       const { data: resultsData, error: resultsError } = await window.supabaseClient
         .from('student_results')
-        .select('*, quizzes(title, access_code)')
+        .select('*, quizzes(id, title, access_code, randomize_questions, is_random, question_count)')
         .in('quiz_id', teacherQuizIds)
         .order('completed_at', { ascending: false });
 
@@ -203,6 +203,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Evaluate each result's score dynamically
       fetchedResults.forEach(r => {
+        // Enforce total_questions cap if quiz has question_count configured
+        const qCount = Number(r.quizzes?.question_count);
+        if (Number.isInteger(qCount) && qCount > 0) {
+          if (!r.total_questions || Number(r.total_questions) > qCount || Number(r.total_questions) <= 0) {
+            r.total_questions = qCount;
+          }
+        }
+
         const qList = quizQuestionsMap.get(r.quiz_id) || [];
         if (qList.length === 0) return;
 
@@ -612,6 +620,101 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/'/g, '&#039;');
   }
 
+  // Deterministic question assignment resolver (identical to quiz.js)
+  function shuffleWithSeed(list, seed) {
+    const arr = [...list];
+
+    // Create numeric hash from seed string
+    let seedVal = 0;
+    for (let i = 0; i < seed.length; i++) {
+      seedVal = (seedVal << 5) - seedVal + seed.charCodeAt(i);
+      seedVal |= 0;
+    }
+
+    // Mulberry32 PRNG
+    function nextRand() {
+      seedVal = (seedVal + 0x6D2B79F5) | 0;
+      let t = Math.imul(seedVal ^ (seedVal >>> 15), 1 | seedVal);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+
+    // Perform Fisher-Yates shuffle using deterministic rand
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(nextRand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+
+    return arr;
+  }
+
+  function getQuestionTypeRank(question) {
+    const type = (question.type || question.question_type || 'MCQ').toUpperCase();
+    if (type === 'MCQ') return 0;
+    if (type === 'FIB') return 1;
+    return 2;
+  }
+
+  function orderQuestionsBySection(list, shouldRandomize, studentName, quizId) {
+    const sections = [[], [], []];
+    list.forEach((question) => {
+      sections[getQuestionTypeRank(question)].push(question);
+    });
+    return sections.flatMap((section, sectionIndex) => {
+      if (!shouldRandomize) return section;
+      return shuffleWithSeed(section, `${studentName}:${quizId}:section:${sectionIndex}`);
+    });
+  }
+
+  // Resolve exactly the questions assigned to a specific student
+  function getStudentAssignedQuestions(quiz, studentName, quizQuestions, totalQuestions, responses = []) {
+    const quizCount = Number(quiz?.question_count);
+    let expectedCount = Number.isInteger(totalQuestions) && totalQuestions > 0 ? totalQuestions : 0;
+    if (Number.isInteger(quizCount) && quizCount > 0) {
+      expectedCount = (expectedCount > 0 && expectedCount <= quizCount) ? expectedCount : quizCount;
+    }
+
+    const pool = (quizQuestions || []).map((qq) => qq.question_bank || qq).filter(Boolean);
+    if (pool.length === 0) {
+      return (expectedCount > 0 && responses && responses.length > expectedCount)
+        ? responses.slice(0, expectedCount)
+        : (responses || []);
+    }
+
+    const count = expectedCount > 0 ? Math.min(expectedCount, pool.length) : pool.length;
+    const isPool = (count > 0 && pool.length > count) || (Number.isInteger(quizCount) && quizCount > 0 && pool.length > quizCount);
+
+    // If responses already matches the expected total, return it directly only if it's not a question pool
+    if (!isPool && responses && responses.length === expectedCount && expectedCount > 0) {
+      return responses;
+    }
+
+    const shouldRandomize = isPool || Boolean(quiz?.randomize_questions ?? quiz?.is_random ?? false);
+    const ordered = orderQuestionsBySection(pool, shouldRandomize, studentName, quiz?.id || '');
+    const assignedPool = ordered.slice(0, count);
+
+    // Map answers from recorded responses onto the student's assigned questions
+    const responseMaps = buildResponseLookupMaps(responses);
+    return assignedPool.map((q, idx) => {
+      const resp = findStudentResponse(q, responseMaps);
+      return {
+        quiz_id: quiz?.id,
+        question_bank_id: q.id,
+        question_text: q.question_text || '',
+        student_answer: resp ? (resp.student_answer ?? '') : '',
+        question_type: normalizeQuestionType(q.type || resp?.question_type),
+        question_order: idx + 1,
+        marks_assigned: resp?.marks_assigned ?? null,
+        ai_reasoning: resp?.ai_reasoning ?? null,
+        correct_option: q.correct_option || '',
+        option_a: q.option_a,
+        option_b: q.option_b,
+        option_c: q.option_c,
+        option_d: q.option_d,
+      };
+    });
+  }
+
   // Open Student History Modal
   window.openStudentHistory = function(studentName) {
     console.log('📊 [Reports] Opening history for student:', studentName);
@@ -973,384 +1076,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return `${answerLetter}. ${optionText}`;
   }
 
-  function renderMcqReviewCard(displayNumber, questionText, question, studentLetter, correctLetter) {
-    let optionsHtml = '';
-    const answeredCorrectly = studentLetter && correctLetter && studentLetter === correctLetter;
-    const studentAnswerLabel = formatMcqAnswerLabel(studentLetter, question);
-    const correctAnswerLabel = formatMcqAnswerLabel(correctLetter, question);
 
-    ['A', 'B', 'C', 'D'].forEach((letter) => {
-      const optionText = question[`option_${letter.toLowerCase()}`];
-      if (!optionText) return;
-
-      let containerClasses = 'bg-white border border-slate-200';
-      let labelText = '';
-
-      if (letter === studentLetter && letter === correctLetter) {
-        containerClasses = 'bg-emerald-50 border-2 border-emerald-400';
-        labelText = '<span class="text-xs font-bold text-emerald-700">Correct and student answer</span>';
-      } else if (letter === studentLetter && letter !== correctLetter) {
-        containerClasses = 'bg-rose-50 border-2 border-rose-400';
-        labelText = '<span class="text-xs font-bold text-rose-700">Student answer</span>';
-      } else if (letter === correctLetter && letter !== studentLetter) {
-        containerClasses = 'bg-emerald-50 border-2 border-emerald-400';
-        labelText = '<span class="text-xs font-bold text-emerald-700">Correct answer</span>';
-      }
-
-      const badgeBg = containerClasses.includes('emerald')
-        ? 'bg-emerald-200 text-emerald-800'
-        : containerClasses.includes('rose')
-          ? 'bg-rose-200 text-rose-800'
-          : 'bg-slate-100 text-slate-500';
-      const textClass = containerClasses.includes('emerald')
-        ? 'text-emerald-800 font-semibold'
-        : containerClasses.includes('rose')
-          ? 'text-rose-800 font-semibold'
-          : 'text-slate-700';
-
-      optionsHtml += `
-        <div class="flex flex-col gap-1.5 p-3 rounded-xl ${containerClasses}">
-          <div class="flex items-center gap-3">
-            <span class="w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold shrink-0 ${badgeBg}">${letter}</span>
-            <span class="text-sm ${textClass} flex-1 break-words">${escapeHtml(optionText)}</span>
-          </div>
-          ${labelText ? `<div class="pl-10">${labelText}</div>` : ''}
-        </div>
-      `;
-    });
-
-    return `
-      <div class="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
-        <div class="flex items-start gap-3 mb-4">
-          <span class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-100 text-blue-700 text-sm font-bold shrink-0">${displayNumber}</span>
-          <h4 class="text-sm font-bold text-slate-900 flex-1 leading-relaxed pt-1">${escapeHtml(questionText)}</h4>
-          <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100 shrink-0">MCQ</span>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-          ${renderAnswerBox(
-            'Student Answer',
-            studentAnswerLabel,
-            answeredCorrectly ? 'border-emerald-400 bg-emerald-50 text-emerald-900' : 'border-rose-400 bg-rose-50 text-rose-900'
-          )}
-          ${renderAnswerBox(
-            'Correct Answer',
-            correctAnswerLabel,
-            'border-emerald-400 bg-emerald-50 text-emerald-900',
-            'No correct answer set'
-          )}
-        </div>
-        <div class="grid grid-cols-1 gap-2">${optionsHtml}</div>
-      </div>
-    `;
-  }
-
-  function renderFibReviewCard(displayNumber, questionText, studentAnswer, correctAnswer, isCorrect) {
-    return `
-      <div class="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
-        <div class="flex items-start gap-3 mb-4">
-          <span class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-100 text-blue-700 text-sm font-bold shrink-0">${displayNumber}</span>
-          <h4 class="text-sm font-bold text-slate-900 flex-1 leading-relaxed pt-1">${escapeHtml(questionText)}</h4>
-          <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-violet-50 text-violet-600 border border-violet-100 shrink-0">Fill in the Blanks</span>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          ${renderAnswerBox(
-            'Student Answer',
-            studentAnswer,
-            isCorrect ? 'border-emerald-400 bg-emerald-50 text-emerald-900' : 'border-rose-400 bg-rose-50 text-rose-900'
-          )}
-          ${renderAnswerBox(
-            'Correct Answer',
-            correctAnswer,
-            'border-emerald-400 bg-emerald-50 text-emerald-900',
-            'No correct answer set'
-          )}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderShortAnswerReviewCard(displayNumber, questionText, studentAnswer, correctAnswer, isCorrect) {
-    return `
-      <div class="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
-        <div class="flex items-start gap-3 mb-4">
-          <span class="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-100 text-blue-700 text-sm font-bold shrink-0">${displayNumber}</span>
-          <h4 class="text-sm font-bold text-slate-900 flex-1 leading-relaxed pt-1">${escapeHtml(questionText)}</h4>
-          <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-100 shrink-0">Short Answer</span>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          ${renderAnswerBox(
-            'Student Answer',
-            studentAnswer,
-            isCorrect ? 'border-emerald-400 bg-emerald-50 text-emerald-900' : 'border-rose-400 bg-rose-50 text-rose-900'
-          )}
-          ${renderAnswerBox(
-            'Correct Answer',
-            correctAnswer,
-            'border-emerald-400 bg-emerald-50 text-emerald-900',
-            'No correct answer set'
-          )}
-        </div>
-      </div>
-    `;
-  }
-  // Open Question Review Modal
-  async function openQuestionReviewModal(submissionId, studentName, quizTitle, quizId) {
-    const resultId = String(submissionId).trim();
-
-    questionReviewTitle.textContent = `Review Responses: ${studentName} - ${quizTitle}`;
-    questionReviewContent.innerHTML = `
-      <div class="py-8 flex items-center justify-center">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    `;
-    questionReviewModal.classList.remove('hidden');
-
-    try {
-      const resultRow = await fetchResultRow(resultId);
-      const resolvedQuizId = quizId || resultRow?.quiz_id;
-      const resolvedStudentName = studentName || resultRow?.student_name || '';
-
-      const { data: quizQuestions, error: qqError } = await window.supabaseClient
-        .from('quiz_questions')
-        .select('*, question_bank(*)')
-        .eq('quiz_id', resolvedQuizId);
-
-      if (qqError) throw qqError;
-
-      const snapshotResponses = normalizeResponseSnapshot(resultRow?.response_snapshot, resultRow);
-            const tableResponses = await fetchStudentResponses(resultId, resolvedQuizId, resolvedStudentName);
-                  const localResponses = snapshotResponses.length === 0 && tableResponses.length === 0
-              ? getLocalResponseSnapshot(resultId, resultRow)
-              : [];
-            // Merge grading data from student_responses into snapshot, so manual grades
-            // (marks_assigned, ai_reasoning) survive even when response_snapshot is present.
-            if (snapshotResponses.length > 0 && tableResponses.length > 0) {
-              const tableMap = new Map();
-              tableResponses.forEach(r => { const k = (r.question_text || '').trim().toLowerCase(); if (k) tableMap.set(k, r); });
-              snapshotResponses.forEach(r => {
-                const k = (r.question_text || '').trim().toLowerCase();
-                const tr = k ? tableMap.get(k) : null;
-                if (tr) {
-                  if (tr.marks_assigned != null) r.marks_assigned = tr.marks_assigned;
-                  if (tr.ai_reasoning) r.ai_reasoning = tr.ai_reasoning;
-                }
-              });
-            }
-            const responses = snapshotResponses.length > 0
-              ? snapshotResponses
-              : (tableResponses.length > 0 ? tableResponses : localResponses);
-      const responseMaps = buildResponseLookupMaps(responses);
-
-      if (!quizQuestions || quizQuestions.length === 0) {
-        questionReviewContent.innerHTML = `
-          <div class="py-8 text-center">
-            <i data-lucide="alert-circle" class="w-12 h-12 text-slate-300 mx-auto mb-3"></i>
-            <p class="text-slate-500">No questions found for this quiz.</p>
-          </div>
-        `;
-        window.lucide.createIcons();
-        return;
-      }
-
-      const questions = quizQuestions
-        .map((qq) => qq.question_bank)
-        .filter(Boolean);
-
-      let totalCorrect = 0;
-      let autoGradableCount = 0;
-
-      const processedQuestions = questions.map((q, index) => {
-        const studentResp = findStudentResponse(q, responseMaps);
-        const grade = evaluateQuestionGrade(q.type || studentResp?.question_type, studentResp, q);
-
-        if (grade.countsTowardAutoScore) {
-          autoGradableCount++;
-          if (grade.isCorrect) {
-            totalCorrect++;
-          }
-        }
-
-        return {
-          q,
-          index,
-          isUnanswered: isStudentAnswerMissing(grade.studentAnswer),
-          ...grade,
-        };
-      });
-
-      const savedScore = Number(resultRow?.score);
-      const savedTotal = Number(resultRow?.total_questions);
-      const scoreNumerator = totalCorrect;
-      const scoreDenominator = Number.isFinite(savedTotal) && savedTotal > 0
-        ? savedTotal
-        : (autoGradableCount > 0 ? autoGradableCount : questions.length);
-      const scorePct = scoreDenominator > 0 ? Math.round((scoreNumerator / scoreDenominator) * 100) : 0;
-      const scorePctColor = scorePct >= 80 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-                            scorePct >= 60 ? 'text-blue-700 bg-blue-50 border-blue-200' :
-                            scorePct >= 40 ? 'text-amber-700 bg-amber-50 border-amber-200' :
-                                             'text-rose-700 bg-rose-50 border-rose-200';
-
-      // Keep database and table synchronized with evaluated score
-      if (resultId && (!Number.isFinite(savedScore) || savedScore !== totalCorrect)) {
-        window.supabaseClient
-          .from('student_results')
-          .update({ score: totalCorrect })
-          .eq('id', resultId)
-          .then(({ error }) => {
-            if (!error) {
-              const localRes = results.find((r) => String(r.id) === String(resultId));
-              if (localRes) {
-                localRes.score = totalCorrect;
-                updateMetrics(getCurrentlyFilteredResults());
-                renderTable(getCurrentlyFilteredResults());
-              }
-            }
-          })
-          .catch((e) => console.warn('Could not sync score:', e));
-      }
-
-      let contentHtml = `
-        <div class="flex items-center justify-between p-4 rounded-xl border ${scorePctColor} mb-5">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl font-black">${scoreNumerator}</span>
-            <span class="text-sm font-semibold opacity-80">/ ${scoreDenominator} correct</span>
-          </div>
-          <span class="text-lg font-extrabold">${scorePct}%</span>
-        </div>
-      `;
-
-      const unansweredCount = processedQuestions.filter((item) => item.isUnanswered).length;
-      if (unansweredCount > 0) {
-        contentHtml += `
-          <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <span class="text-xs font-semibold text-slate-500">
-              Showing ${processedQuestions.length - unansweredCount} answered question${processedQuestions.length - unansweredCount !== 1 ? 's' : ''}
-            </span>
-            <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                id="toggleUnansweredQuestions"
-                class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              >
-              Show unanswered (${unansweredCount})
-            </label>
-          </div>
-        `;
-      }
-
-      processedQuestions.forEach((item) => {
-        const { q, index, questionType, studentAnswer, correctAnswer, studentCompare, correctCompare, isCorrect, isUnanswered } = item;
-        const displayNumber = index + 1;
-        const questionText = q.question_text || '';
-        let cardHtml = '';
-
-        if (questionType === 'MCQ') {
-          cardHtml = renderMcqReviewCard(
-            displayNumber,
-            questionText,
-            q,
-            studentCompare,
-            correctCompare
-          );
-        } else if (questionType === 'FIB') {
-          cardHtml = renderFibReviewCard(
-            displayNumber,
-            questionText,
-            studentAnswer,
-            correctAnswer,
-            isCorrect
-          );
-        } else {
-          cardHtml = renderShortAnswerReviewCard(
-            displayNumber,
-            questionText,
-            studentAnswer,
-            correctAnswer,
-            isCorrect
-          );
-        }
-
-        contentHtml += `
-          <div class="question-review-card ${isUnanswered ? 'hidden' : ''}" data-unanswered="${isUnanswered ? 'true' : 'false'}">
-            ${cardHtml}
-          </div>
-        `;
-      });
-
-      questionReviewContent.innerHTML = `<div class="space-y-4">${contentHtml}</div>`;
-      window.lucide.createIcons();
-    } catch (err) {
-      console.error('Error loading question review:', err);
-      questionReviewContent.innerHTML = `
-        <div class="py-8 text-center">
-          <i data-lucide="alert-circle" class="w-12 h-12 text-rose-400 mx-auto mb-3"></i>
-          <h4 class="text-sm font-bold text-rose-800">Failed to load questions</h4>
-          <p class="text-rose-600 text-sm mt-1">${escapeHtml(err.message)}</p>
-        </div>
-      `;
-      window.lucide.createIcons();
-    }
-  }
-  // Event delegation for btn-view-responses in reports container
-  reportsContainer.addEventListener('click', (e) => {
-    const sortButton = e.target.closest('.reports-sort-btn');
-    if (sortButton) {
-      tableSort = {
-        key: sortButton.dataset.sortKey,
-        direction: sortButton.dataset.sortDirection === 'desc' ? 'desc' : 'asc',
-      };
-      renderTable(getCurrentlyFilteredResults());
-      return;
-    }
-
-    const btn = e.target.closest('.btn-view-responses');
-    if (!btn) return;
-
-    const submissionId = btn.dataset.submissionId;
-    const result = results.find((r) => String(r.id) === String(submissionId));
-    if (!result) {
-      window.showToast('Submission not found', 'warning');
-      return;
-    }
-
-    openQuestionReviewModal(
-      result.id,
-      result.student_name,
-      result.quizzes?.title || 'Unknown Quiz',
-      result.quiz_id
-    );
-  });
-
-  questionReviewContent.addEventListener('change', (e) => {
-    if (e.target.id !== 'toggleUnansweredQuestions') return;
-
-    const showUnanswered = e.target.checked;
-    questionReviewContent
-      .querySelectorAll('.question-review-card[data-unanswered="true"]')
-      .forEach((card) => {
-        card.classList.toggle('hidden', !showUnanswered);
-      });
-  });
-
-  // Event delegation for btn-view-responses in student history modal
-  studentHistoryModal.addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-view-responses');
-    if (!btn) return;
-
-    const submissionId = btn.dataset.submissionId;
-    const result = results.find((r) => String(r.id) === String(submissionId));
-    if (!result) {
-      window.showToast('Submission not found', 'warning');
-      return;
-    }
-
-    openQuestionReviewModal(
-      result.id,
-      result.student_name,
-      result.quizzes?.title || 'Unknown Quiz',
-      result.quiz_id
-    );
-  });
 
   const detailedCsvHeaders = [
     'submission_id',
@@ -1533,6 +1259,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (qqError) throw qqError;
 
+    // Lookup maps for question_bank metadata
+    const questionBankById = new Map();
+    const questionBankByText = new Map();
+    (quizQuestions || []).forEach((qq) => {
+      const q = qq.question_bank;
+      if (q) {
+        if (q.id) questionBankById.set(String(q.id), q);
+        const textKey = (q.question_text || '').trim().toLowerCase();
+        if (textKey) questionBankByText.set(textKey, q);
+      }
+    });
+
     const snapshotResponses = normalizeResponseSnapshot(resultRow?.response_snapshot, resultContext);
     const tableResponses = await fetchStudentResponses(submissionId, quizId, resolvedStudentName);
     const localResponses = snapshotResponses.length === 0 && tableResponses.length === 0
@@ -1541,16 +1279,93 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     mergeTableGradesIntoSnapshot(snapshotResponses, tableResponses);
 
-    const responses = snapshotResponses.length > 0
+    const rawResponses = snapshotResponses.length > 0
       ? snapshotResponses
       : (tableResponses.length > 0 ? tableResponses : localResponses);
-    const responseMaps = buildResponseLookupMaps(responses);
+
+    let quizObj = quizzes.find((q) => String(q.id) === String(quizId)) || result.quizzes;
+    if (!quizObj || !quizObj.question_count) {
+      const { data: qData } = await window.supabaseClient
+        .from('quizzes')
+        .select('*')
+        .eq('id', quizId)
+        .maybeSingle();
+      if (qData) {
+        quizObj = { ...(quizObj || {}), ...qData };
+      }
+    }
+    quizObj = quizObj || { id: quizId };
+
+    const savedTotal = Number(resultRow?.total_questions ?? result.total_questions);
+    const quizCount = Number(quizObj?.question_count);
+    let expectedTotal = 0;
+    if (Number.isInteger(quizCount) && quizCount > 0) {
+      expectedTotal = (Number.isInteger(savedTotal) && savedTotal > 0 && savedTotal <= quizCount)
+        ? savedTotal
+        : quizCount;
+    } else if (Number.isInteger(savedTotal) && savedTotal > 0) {
+      expectedTotal = savedTotal;
+    } else if (rawResponses.length > 0) {
+      expectedTotal = rawResponses.length;
+    }
+
+    // ALWAYS enforce exact student question slice, even with inflated or legacy snapshots
+    const rawAssigned = getStudentAssignedQuestions(quizObj, resolvedStudentName, quizQuestions, expectedTotal, rawResponses);
+    const responses = (expectedTotal > 0 && rawAssigned.length > expectedTotal)
+      ? rawAssigned.slice(0, expectedTotal)
+      : rawAssigned;
+
     const currentScore = Number(resultRow?.score ?? result.score ?? 0);
-    const totalQuestions = Number(resultRow?.total_questions ?? result.total_questions ?? 0);
+    const totalQuestions = expectedTotal > 0 ? expectedTotal : (responses.length > 0 ? responses.length : 0);
     const percentage = totalQuestions > 0 ? Math.round((currentScore / totalQuestions) * 100) : 0;
 
-    return (quizQuestions || []).map((qq, qIndex) => {
-      const question = qq.question_bank;
+    // If student has a recorded response snapshot/list, export ONLY the questions they received
+    if (responses && responses.length > 0) {
+      return responses.map((resp, qIndex) => {
+        const qBank = (resp.question_bank_id && questionBankById.get(String(resp.question_bank_id))) ||
+                      (resp.question_text && questionBankByText.get(String(resp.question_text).trim().toLowerCase())) ||
+                      resp;
+
+        const questionText = resp.question_text || qBank?.question_text || '';
+        const questionType = normalizeQuestionType(resp.question_type || qBank?.type);
+        const rawStudentAnswer = String(resp.student_answer || '').trim();
+        const studentAnswer = (questionType === 'MCQ' && qBank)
+          ? formatMcqAnswerLabel(normalizeMcqLetter(rawStudentAnswer, qBank), qBank)
+          : rawStudentAnswer;
+        const correctKey = (questionType === 'MCQ' && qBank)
+          ? formatMcqAnswerLabel(getMcqCorrectLetter(qBank), qBank)
+          : (qBank?.correct_option || resp.correct_option || '');
+
+        return [
+          submissionId,
+          quizCode,
+          resolvedStudentName,
+          quizTitle,
+          resultRow?.completed_at || result.completed_at || '',
+          currentScore,
+          totalQuestions,
+          percentage,
+          qIndex + 1,
+          questionType,
+          questionText,
+          studentAnswer,
+          correctKey,
+          resp.marks_assigned ?? '',
+          resp.ai_reasoning || ''
+        ];
+      }).filter(Boolean);
+    }
+
+    // Fallback for legacy submissions without snapshots - strictly capped to expectedTotal
+    const responseMaps = buildResponseLookupMaps(responses);
+    const pool = (quizQuestions || []).map((qq) => qq.question_bank).filter(Boolean);
+    const fallbackCount = expectedTotal > 0 ? Math.min(expectedTotal, pool.length) : pool.length;
+    const isPool = (fallbackCount > 0 && pool.length > fallbackCount) || (Number.isInteger(quizCount) && quizCount > 0 && pool.length > quizCount);
+    const shouldRandomize = isPool || Boolean(quizObj?.randomize_questions ?? quizObj?.is_random ?? false);
+    const ordered = orderQuestionsBySection(pool, shouldRandomize, resolvedStudentName, quizId);
+    const fallbackList = ordered.slice(0, fallbackCount);
+
+    return fallbackList.map((question, qIndex) => {
       if (!question) return null;
 
       const studentResp = findStudentResponse(question, responseMaps);
@@ -1590,8 +1405,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const csvContent = rowsToCsv([detailedCsvHeaders, ...rowsByResult.flat()]);
     return includeAiPrompt ? buildAiGradingPrompt(csvContent) : csvContent;
   }
-  // Event delegation for copy CSV buttons & View Responses button
+  // Event delegation for table sort, copy CSV buttons & View Responses button
   reportsContainer.addEventListener('click', async (e) => {
+    const sortButton = e.target.closest('.reports-sort-btn');
+    if (sortButton) {
+      tableSort = {
+        key: sortButton.dataset.sortKey,
+        direction: sortButton.dataset.sortDirection === 'desc' ? 'desc' : 'asc',
+      };
+      renderTable(getCurrentlyFilteredResults());
+      return;
+    }
+
     const copyBtn = e.target.closest('.copy-csv-btn');
     if (copyBtn) {
       await handleCopyCsv(copyBtn);
@@ -1644,16 +1469,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  if (closeQuestionReview && questionReviewModal) {
-    closeQuestionReview.addEventListener('click', () => {
-      questionReviewModal.classList.add('hidden');
-    });
-    questionReviewModal.addEventListener('click', (e) => {
-      if (e.target === questionReviewModal) {
-        questionReviewModal.classList.add('hidden');
-      }
-    });
-  }
+
 
   // Event delegation for Apply Filter button and Copy All CSV
   reportsContainer.addEventListener('click', async (e) => {
@@ -2272,9 +2088,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const qType = String(question.questionType || '').toUpperCase();
 
       // Determine color and status badge based on correctness and question type
-      let studentBoxClass = 'rounded-md bg-emerald-50 p-2 border border-emerald-200';
-      let studentTextClass = 'text-emerald-950';
-      let studentLabelClass = 'text-emerald-800';
+      let studentBoxClass = 'rounded-md bg-rose-50 p-2 border border-rose-200';
+      let studentTextClass = 'text-rose-950';
+      let studentLabelClass = 'text-rose-800';
       let statusBadge = '';
 
       if (qType === 'MCQ') {
@@ -2310,8 +2126,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusBadge = `<span class="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700">AI (0 / 1): ${escapeHtml(aiProposedMark)}</span>`;
           }
         } else {
+          studentBoxClass = 'rounded-md bg-emerald-50 p-2 border border-emerald-200';
+          studentTextClass = 'text-emerald-950';
+          studentLabelClass = 'text-emerald-800';
           statusBadge = `<span class="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">AI: ${escapeHtml(aiProposedMark)}</span>`;
         }
+      } else if (hasAssignedMarks) {
+        const mark = parseFloat(question.assignedMarks);
+        if (!isNaN(mark)) {
+          if (mark >= 1.0) {
+            studentBoxClass = 'rounded-md bg-emerald-50 p-2 border border-emerald-200';
+            studentTextClass = 'text-emerald-950';
+            studentLabelClass = 'text-emerald-800';
+            statusBadge = `<span class="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">Mark: ${escapeHtml(String(question.assignedMarks))}</span>`;
+          } else if (mark > 0) {
+            studentBoxClass = 'rounded-md bg-amber-50 p-2 border border-amber-200';
+            studentTextClass = 'text-amber-950';
+            studentLabelClass = 'text-amber-800';
+            statusBadge = `<span class="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">Partial (${escapeHtml(String(question.assignedMarks))})</span>`;
+          } else {
+            studentBoxClass = 'rounded-md bg-rose-50 p-2 border border-rose-200';
+            studentTextClass = 'text-rose-950';
+            studentLabelClass = 'text-rose-800';
+            statusBadge = `<span class="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700">Mark: 0</span>`;
+          }
+        } else {
+          studentBoxClass = 'rounded-md bg-rose-50 p-2 border border-rose-200';
+          studentTextClass = 'text-rose-950';
+          studentLabelClass = 'text-rose-800';
+          statusBadge = '<span class="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700">Incorrect (0 / 1)</span>';
+        }
+      } else if (isCorrect) {
+        studentBoxClass = 'rounded-md bg-emerald-50 p-2 border border-emerald-200';
+        studentTextClass = 'text-emerald-950';
+        studentLabelClass = 'text-emerald-800';
+        statusBadge = '<span class="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">Correct (1 / 1)</span>';
+      } else {
+        studentBoxClass = 'rounded-md bg-rose-50 p-2 border border-rose-200';
+        studentTextClass = 'text-rose-950';
+        studentLabelClass = 'text-rose-800';
+        statusBadge = '<span class="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700">Incorrect (0 / 1)</span>';
       }
 
       return `
@@ -2572,32 +2426,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       const updatePromises = validGrades.map(async (grade) => {
         const submissionId = grade.id;
         const resultRow = results.find((r) => String(r.id) === String(submissionId));
-        const quizId = resultRow?.quiz_id || resultRow?.quizzes?.id;
+        const fullResultRow = await fetchResultRow(submissionId);
+        const resultContext = fullResultRow || resultRow;
+        const quizId = resultRow?.quiz_id || resultRow?.quizzes?.id || resultContext?.quiz_id;
         const studentResponsesList = [];
-        const updatedSnapshot = Array.isArray(resultRow?.response_snapshot) ? [...resultRow.response_snapshot] : [];
         let computedTotalScore = grade.score;
 
         if (quizId) {
           computedTotalScore = 0;
-          const resolvedStudentName = resultRow?.student_name || 'Unknown Student';
+          const resolvedStudentName = resultContext?.student_name || 'Unknown Student';
 
-          // Fetch student_responses for this submission or quiz
-          let { data: existingResponses } = await window.supabaseClient
-            .from('student_responses')
-            .select('*')
-            .eq('student_result_id', submissionId);
+          const snapshotResponses = normalizeResponseSnapshot(resultContext?.response_snapshot, resultContext);
+          const tableResponses = await fetchStudentResponses(submissionId, quizId, resolvedStudentName);
+          const localResponses = snapshotResponses.length === 0 && tableResponses.length === 0
+            ? getLocalResponseSnapshot(submissionId, resultContext)
+            : [];
 
-          if ((!existingResponses || existingResponses.length === 0) && quizId && resolvedStudentName) {
-            const fallbackResp = await window.supabaseClient
-              .from('student_responses')
-              .select('*')
-              .eq('quiz_id', quizId)
-              .eq('student_name', resolvedStudentName);
-            existingResponses = fallbackResp.data;
-          }
+          mergeTableGradesIntoSnapshot(snapshotResponses, tableResponses);
+
+          const rawResponses = snapshotResponses.length > 0
+            ? snapshotResponses
+            : (tableResponses.length > 0 ? tableResponses : localResponses);
 
           const responseMap = new Map();
-          (existingResponses || []).forEach((resp) => {
+          (tableResponses || []).forEach((resp) => {
             const key = (resp.question_text || '').trim().toLowerCase();
             if (key && !responseMap.has(key)) {
               responseMap.set(key, resp);
@@ -2610,82 +2462,178 @@ document.addEventListener('DOMContentLoaded', async () => {
             .select('*, question_bank(*)')
             .eq('quiz_id', quizId);
 
-          const questions = (quizQuestions || []).map((qq) => qq.question_bank).filter(Boolean);
-          const uniqueQList = [];
-          const seenQIds = new Set();
-          for (const q of questions) {
-            if (q && q.id && !seenQIds.has(q.id)) {
-              seenQIds.add(q.id);
-              uniqueQList.push(q);
+          const questionBankById = new Map();
+          const questionBankByText = new Map();
+          (quizQuestions || []).forEach((qq) => {
+            const q = qq.question_bank;
+            if (q) {
+              if (q.id) questionBankById.set(String(q.id), q);
+              const textKey = (q.question_text || '').trim().toLowerCase();
+              if (textKey) questionBankByText.set(textKey, q);
+            }
+          });
+
+          let quizObj = quizzes.find((q) => String(q.id) === String(quizId)) || resultRow?.quizzes || { id: quizId };
+          if (!quizObj || !quizObj.question_count) {
+            const { data: qData } = await window.supabaseClient
+              .from('quizzes')
+              .select('*')
+              .eq('id', quizId)
+              .maybeSingle();
+            if (qData) {
+              quizObj = { ...(quizObj || {}), ...qData };
             }
           }
+          quizObj = quizObj || { id: quizId };
 
-          for (let i = 0; i < uniqueQList.length; i++) {
-            const q = uniqueQList[i];
-            const qIndex = i + 1;
-            const qType = String(q.type || 'MCQ').toUpperCase();
-            const proposedMarkStr = getAiProposedMark(grade.ai_reasoning, qIndex, qType);
+          const savedTotal = Number(resultContext?.total_questions ?? resultRow?.total_questions);
+          const quizCount = Number(quizObj?.question_count);
+          let expectedTotal = 0;
+          if (Number.isInteger(quizCount) && quizCount > 0) {
+            expectedTotal = (Number.isInteger(savedTotal) && savedTotal > 0 && savedTotal <= quizCount)
+              ? savedTotal
+              : quizCount;
+          } else if (Number.isInteger(savedTotal) && savedTotal > 0) {
+            expectedTotal = savedTotal;
+          } else if (rawResponses.length > 0) {
+            expectedTotal = rawResponses.length;
+          }
 
-            const qTextKey = (q.question_text || '').trim().toLowerCase();
-            const existingResp = responseMap.get(qTextKey);
+          // ALWAYS enforce exact student question slice, even with inflated or legacy snapshots
+          const responses = getStudentAssignedQuestions(quizObj, resolvedStudentName, quizQuestions, expectedTotal, rawResponses);
 
-            let snapItem = updatedSnapshot.find(s =>
-              (s.question_text || '').trim().toLowerCase() === qTextKey ||
-              (s.question_bank_id && q.id && String(s.question_bank_id) === String(q.id))
-            );
+          const isFromResponses = responses && responses.length > 0;
 
-            const studentAns = existingResp?.student_answer || snapItem?.student_answer || '';
-            const isCorrectMcq = isCsvQuestionCorrect({ studentAnswer: studentAns, correctKey: q.correct_option });
+          if (isFromResponses) {
+            // Apply marks ONLY to the student's assigned questions matching Q1..QN
+            const updatedSnapshot = responses.map((r, i) => ({ ...r, question_order: r.question_order || (i + 1) }));
 
-            let marksToAssign = null;
-            let reasoningToAssign = null;
+            for (let i = 0; i < responses.length; i++) {
+              const resp = responses[i];
+              const qIndex = i + 1; // 1-based index matching Q1..QN in AI prompt & CSV
+              const qBank = (resp.question_bank_id && questionBankById.get(String(resp.question_bank_id))) ||
+                            (resp.question_text && questionBankByText.get(String(resp.question_text).trim().toLowerCase())) ||
+                            resp;
 
-            if (qType === 'MCQ') {
-              marksToAssign = isCorrectMcq ? 1 : 0;
-              reasoningToAssign = isCorrectMcq ? 'Correct MCQ answer' : 'Incorrect MCQ answer';
-              computedTotalScore += marksToAssign;
-            } else if (proposedMarkStr) {
-              const numMatch = proposedMarkStr.match(/^([0-9.]+)/);
-              if (numMatch) marksToAssign = parseFloat(numMatch[1]);
-              reasoningToAssign = grade.ai_reasoning || null;
-              computedTotalScore += (marksToAssign || 0);
-            } else {
-              marksToAssign = 0;
-              reasoningToAssign = grade.ai_reasoning || null;
-            }
+              const qType = normalizeQuestionType(resp.question_type || qBank?.type);
+              const proposedMarkStr = getAiProposedMark(grade.ai_reasoning, qIndex, qType);
 
-            if (!snapItem) {
-              snapItem = {
-                quiz_id: quizId,
-                student_result_id: submissionId,
-                student_name: resolvedStudentName,
-                question_text: q.question_text || '',
-                question_bank_id: q.id,
+              const qTextKey = (resp.question_text || qBank?.question_text || '').trim().toLowerCase();
+              const existingResp = responseMap.get(qTextKey);
+
+              const snapItem = updatedSnapshot[i];
+
+              const studentAns = String(resp.student_answer || existingResp?.student_answer || snapItem?.student_answer || '').trim();
+              const correctOption = qBank?.correct_option || resp.correct_option || resp.correct_key || '';
+              const isCorrectMcq = isCsvQuestionCorrect({ studentAnswer: studentAns, correctKey: correctOption });
+
+              let marksToAssign = null;
+              let reasoningToAssign = null;
+
+              if (qType === 'MCQ') {
+                marksToAssign = isCorrectMcq ? 1 : 0;
+                reasoningToAssign = isCorrectMcq ? 'Correct MCQ answer' : 'Incorrect MCQ answer';
+                computedTotalScore += marksToAssign;
+              } else if (proposedMarkStr) {
+                const numMatch = proposedMarkStr.match(/^([0-9.]+)/);
+                if (numMatch) marksToAssign = parseFloat(numMatch[1]);
+                reasoningToAssign = grade.ai_reasoning || null;
+                computedTotalScore += (marksToAssign || 0);
+              } else {
+                marksToAssign = 0;
+                reasoningToAssign = grade.ai_reasoning || null;
+              }
+
+              if (snapItem) {
+                snapItem.marks_assigned = marksToAssign;
+                snapItem.ai_reasoning = reasoningToAssign;
+              }
+
+              if (existingResp) {
+                await window.supabaseClient
+                  .from('student_responses')
+                  .update({
+                    student_result_id: submissionId,
+                    marks_assigned: marksToAssign,
+                    ai_reasoning: reasoningToAssign
+                  })
+                  .eq('id', existingResp.id);
+              } else if (marksToAssign !== null) {
+                await window.supabaseClient
+                  .from('student_responses')
+                  .insert({
+                    quiz_id: quizId,
+                    student_result_id: submissionId,
+                    student_name: resolvedStudentName,
+                    question_text: resp.question_text || qBank?.question_text || '',
+                    question_bank_id: resp.question_bank_id || qBank?.id || null,
+                    student_answer: studentAns,
+                    question_type: qType,
+                    marks_assigned: marksToAssign,
+                    ai_reasoning: reasoningToAssign
+                  });
+              }
+
+              studentResponsesList.push({
+                id: existingResp?.id || resp.id || null,
+                question_text: resp.question_text || qBank?.question_text || '',
+                question_bank_id: resp.question_bank_id || qBank?.id || null,
                 student_answer: studentAns,
                 question_type: qType,
-                question_order: qIndex,
                 marks_assigned: marksToAssign,
-                ai_reasoning: reasoningToAssign,
-              };
-              updatedSnapshot.push(snapItem);
-            } else {
-              snapItem.marks_assigned = marksToAssign;
-              snapItem.ai_reasoning = reasoningToAssign;
+                ai_reasoning: reasoningToAssign
+              });
             }
 
-            if (existingResp) {
-              await window.supabaseClient
-                .from('student_responses')
-                .update({
-                  student_result_id: submissionId,
-                  marks_assigned: marksToAssign,
-                  ai_reasoning: reasoningToAssign
-                })
-                .eq('id', existingResp.id);
-            } else if (marksToAssign !== null) {
-              await window.supabaseClient
-                .from('student_responses')
-                .insert({
+            const finalScoreToSave = Math.round(computedTotalScore);
+            computedScoresMap.set(submissionId, finalScoreToSave);
+            await executeGradingUpdate(submissionId, finalScoreToSave, updatedSnapshot, studentResponsesList);
+          } else {
+            // Fallback for legacy submissions without recorded responses
+            const updatedSnapshot = Array.isArray(resultContext?.response_snapshot) ? [...resultContext.response_snapshot] : [];
+            const pool = (quizQuestions || []).map((qq) => qq.question_bank).filter(Boolean);
+            const fallbackCount = expectedTotal > 0 ? Math.min(expectedTotal, pool.length) : pool.length;
+            const isPool = (fallbackCount > 0 && pool.length > fallbackCount) || (Number.isInteger(quizCount) && quizCount > 0 && pool.length > quizCount);
+            const shouldRandomize = isPool || Boolean(quizObj?.randomize_questions ?? quizObj?.is_random ?? false);
+            const ordered = orderQuestionsBySection(pool, shouldRandomize, resolvedStudentName, quizId);
+            const uniqueQList = ordered.slice(0, fallbackCount);
+
+            for (let i = 0; i < uniqueQList.length; i++) {
+              const q = uniqueQList[i];
+              const qIndex = i + 1;
+              const qType = String(q.type || 'MCQ').toUpperCase();
+              const proposedMarkStr = getAiProposedMark(grade.ai_reasoning, qIndex, qType);
+
+              const qTextKey = (q.question_text || '').trim().toLowerCase();
+              const existingResp = responseMap.get(qTextKey);
+
+              let snapItem = updatedSnapshot.find(s =>
+                (s.question_text || '').trim().toLowerCase() === qTextKey ||
+                (s.question_bank_id && q.id && String(s.question_bank_id) === String(q.id))
+              );
+
+              const studentAns = existingResp?.student_answer || snapItem?.student_answer || '';
+              const isCorrectMcq = isCsvQuestionCorrect({ studentAnswer: studentAns, correctKey: q.correct_option });
+
+              let marksToAssign = null;
+              let reasoningToAssign = null;
+
+              if (qType === 'MCQ') {
+                marksToAssign = isCorrectMcq ? 1 : 0;
+                reasoningToAssign = isCorrectMcq ? 'Correct MCQ answer' : 'Incorrect MCQ answer';
+                computedTotalScore += marksToAssign;
+              } else if (proposedMarkStr) {
+                const numMatch = proposedMarkStr.match(/^([0-9.]+)/);
+                if (numMatch) marksToAssign = parseFloat(numMatch[1]);
+                reasoningToAssign = grade.ai_reasoning || null;
+                computedTotalScore += (marksToAssign || 0);
+              } else {
+                marksToAssign = 0;
+                reasoningToAssign = grade.ai_reasoning || null;
+              }
+
+              if (!snapItem) {
+                snapItem = {
                   quiz_id: quizId,
                   student_result_id: submissionId,
                   student_name: resolvedStudentName,
@@ -2693,27 +2641,62 @@ document.addEventListener('DOMContentLoaded', async () => {
                   question_bank_id: q.id,
                   student_answer: studentAns,
                   question_type: qType,
+                  question_order: qIndex,
                   marks_assigned: marksToAssign,
-                  ai_reasoning: reasoningToAssign
-                });
+                  ai_reasoning: reasoningToAssign,
+                };
+                updatedSnapshot.push(snapItem);
+              } else {
+                snapItem.marks_assigned = marksToAssign;
+                snapItem.ai_reasoning = reasoningToAssign;
+              }
+
+              if (existingResp) {
+                await window.supabaseClient
+                  .from('student_responses')
+                  .update({
+                    student_result_id: submissionId,
+                    marks_assigned: marksToAssign,
+                    ai_reasoning: reasoningToAssign
+                  })
+                  .eq('id', existingResp.id);
+              } else if (marksToAssign !== null) {
+                await window.supabaseClient
+                  .from('student_responses')
+                  .insert({
+                    quiz_id: quizId,
+                    student_result_id: submissionId,
+                    student_name: resolvedStudentName,
+                    question_text: q.question_text || '',
+                    question_bank_id: q.id,
+                    student_answer: studentAns,
+                    question_type: qType,
+                    marks_assigned: marksToAssign,
+                    ai_reasoning: reasoningToAssign
+                  });
+              }
+
+              studentResponsesList.push({
+                id: existingResp?.id || null,
+                question_text: q.question_text || '',
+                question_bank_id: q.id || null,
+                student_answer: studentAns,
+                question_type: qType,
+                marks_assigned: marksToAssign,
+                ai_reasoning: reasoningToAssign
+              });
             }
 
-            studentResponsesList.push({
-              id: existingResp?.id || null,
-              question_text: q.question_text || '',
-              question_bank_id: q.id || null,
-              student_answer: studentAns,
-              question_type: qType,
-              marks_assigned: marksToAssign,
-              ai_reasoning: reasoningToAssign
-            });
+            const finalScoreToSave = Math.round(computedTotalScore);
+            computedScoresMap.set(submissionId, finalScoreToSave);
+            await executeGradingUpdate(submissionId, finalScoreToSave, updatedSnapshot, studentResponsesList);
           }
+        } else {
+          const finalScoreToSave = Math.round(computedTotalScore);
+          computedScoresMap.set(submissionId, finalScoreToSave);
+          const updatedSnapshot = Array.isArray(resultContext?.response_snapshot) ? [...resultContext.response_snapshot] : [];
+          await executeGradingUpdate(submissionId, finalScoreToSave, updatedSnapshot, studentResponsesList);
         }
-
-        // Use rounded computed score from actual verified MCQs + AI marks
-        const finalScoreToSave = Math.round(computedTotalScore);
-        computedScoresMap.set(submissionId, finalScoreToSave);
-        await executeGradingUpdate(submissionId, finalScoreToSave, updatedSnapshot, studentResponsesList);
       });
 
       await Promise.all(updatePromises);
@@ -2756,11 +2739,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Also handle clicks in student history modal
+  // Also handle clicks in student history modal (copy prompt & view responses)
   studentHistoryModal.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.copy-csv-btn');
-    if (btn) {
-      await handleCopyCsv(btn);
+    const copyBtn = e.target.closest('.copy-csv-btn');
+    if (copyBtn) {
+      await handleCopyCsv(copyBtn);
+      return;
+    }
+
+    const viewBtn = e.target.closest('.btn-view-responses');
+    if (viewBtn) {
+      const submissionId = viewBtn.getAttribute('data-submission-id') || viewBtn.dataset.submissionId;
+      if (submissionId) {
+        await openQuestionReviewModal(submissionId);
+      }
     }
   });
 

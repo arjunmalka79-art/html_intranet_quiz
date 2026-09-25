@@ -270,9 +270,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      const shouldRandomizeQuestions = quiz.randomize_questions ?? quiz.is_random;
+      const questionLimit = getQuestionLimit(items.length);
+      const isQuestionPool = items.length > questionLimit;
+      const shouldRandomizeQuestions = isQuestionPool || Boolean(quiz.randomize_questions ?? quiz.is_random);
       items = orderQuestionsBySection(items, shouldRandomizeQuestions);
-      questions = items.slice(0, getQuestionLimit(items.length));
+      questions = items.slice(0, questionLimit);
 
       // Hide loading spinner
       loaderArea.classList.add('hidden');
