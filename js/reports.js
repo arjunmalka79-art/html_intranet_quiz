@@ -1096,6 +1096,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     'ai_reasoning'
   ];
 
+  const aiPromptCsvHeaders = [
+    'submission_id',
+    'student_name',
+    'question_index',
+    'question_type',
+    'question_text',
+    'student_answer',
+    'correct_key'
+  ];
+
   function rowsToCsv(rows) {
     return rows
       .map((row) =>
@@ -1116,6 +1126,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       'Grade ONLY Fill in the Blank (FIB) and Short Answer (SHORT_ANSWER) questions.',
       'Do NOT change MCQ answers. Keep their existing result when calculating the total score.',
       '',
+      'The input CSV has columns: submission_id, student_name, question_index, question_type, question_text, student_answer, correct_key',
+      '',
       'For each FIB or SHORT_ANSWER row:',
       'The CSV correct_key is the authoritative correct answer. Never replace or override it using outside knowledge, browser tolerance, or assumptions.',
       'Treat answers that differ only in capitalization or surrounding whitespace as exact matches.',
@@ -1133,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       '7. FIB Questions: Exact match or case/whitespace variation = 1/1 (e.g., "Q5: 1/1 - Exact match").',
       '8. Completely incorrect answers = 0/1.',
       '9. Never hallucinate information.',
-      '10. Never modify submission_id, student_name, quiz_code, question_text, or question_index.',
+      '10. Never modify submission_id, student_name, question_text, or question_index.',
       '',
       'Output requirements:',
       '11. Output MUST be valid CSV only.',
@@ -1146,7 +1158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       'The completed CSV MUST have exactly these columns in this order:',
       'submission_id,score,ai_reasoning',
       '',
-      'Return exactly one row per submission_id. Calculate score as the total for all questions: retain each MCQ result from CSV (1 if student_answer matches correct_key, 0 if mismatch), grade each FIB/SHORT_ANSWER question from 0.0 to 1.0, then round the final total to the nearest whole number. score must be a whole number from 0 to total_questions.',
+      'Return exactly one row per submission_id. Calculate score as the total for all questions for that student: award 1 for each correct MCQ (where student_answer matches correct_key, 0 for mismatch), grade each FIB/SHORT_ANSWER question from 0.0 to 1.0, then round the final total to the nearest whole number. score must be a whole number from 0 to the total number of questions for that submission.',
       'ai_reasoning must list only FIB/SHORT_ANSWER questions in this exact format: Q{question_index}: {earned}/1 - {brief reason}; Q{question_index}: {earned}/1 - {brief reason}. Do not mention MCQ questions. If there are no FIB/SHORT_ANSWER questions, leave ai_reasoning empty. If it contains commas, wrap the field in double quotes.',
       'Output only the completed CSV: no markdown, code fences, headings, notes, or text before or after it.',
       '',
@@ -1241,7 +1253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  async function buildDetailedCsvRowsForResult(result) {
+  async function buildDetailedCsvRowsForResult(result, forAiPrompt = false) {
     const submissionId = result.id;
     const resultRow = await fetchResultRow(submissionId);
     const resultContext = resultRow || result;
@@ -1336,6 +1348,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           ? formatMcqAnswerLabel(getMcqCorrectLetter(qBank), qBank)
           : (qBank?.correct_option || resp.correct_option || '');
 
+        if (forAiPrompt) {
+          return [
+            submissionId,
+            resolvedStudentName,
+            qIndex + 1,
+            questionType,
+            questionText,
+            studentAnswer,
+            correctKey
+          ];
+        }
+
         return [
           submissionId,
           quizCode,
@@ -1378,6 +1402,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? formatMcqAnswerLabel(getMcqCorrectLetter(question), question)
         : (question.correct_option || '');
 
+      if (forAiPrompt) {
+        return [
+          submissionId,
+          resolvedStudentName,
+          qIndex + 1,
+          questionType,
+          question.question_text || '',
+          studentAnswer,
+          correctKey
+        ];
+      }
+
       return [
         submissionId,
         quizCode,
@@ -1399,10 +1435,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function buildDetailedCsvTextForResults(list, includeAiPrompt = true) {
+    const headers = includeAiPrompt ? aiPromptCsvHeaders : detailedCsvHeaders;
     const rowsByResult = await Promise.all(
-      list.map((result) => buildDetailedCsvRowsForResult(result))
+      list.map((result) => buildDetailedCsvRowsForResult(result, includeAiPrompt))
     );
-    const csvContent = rowsToCsv([detailedCsvHeaders, ...rowsByResult.flat()]);
+    const csvContent = rowsToCsv([headers, ...rowsByResult.flat()]);
     return includeAiPrompt ? buildAiGradingPrompt(csvContent) : csvContent;
   }
   // Event delegation for table sort, copy CSV buttons & View Responses button
@@ -1486,8 +1523,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       filterDate = '';
       filterTime = '';
       filterAndRender();
-    } else if (e.target.id === 'btnCopyAllCsv') {
-      const btn = e.target;
+    } else if (e.target.id === 'btnCopyAllCsv' || e.target.closest('#btnCopyAllCsv')) {
+      const btn = e.target.closest('#btnCopyAllCsv') || e.target;
       const originalText = btn.textContent;
       btn.textContent = 'Building...';
       btn.disabled = true;
@@ -1501,7 +1538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const csvContent = await buildDetailedCsvTextForResults(filtered, true);
         await navigator.clipboard.writeText(csvContent);
-        window.showToast('Detailed AI CSV prompt copied!', 'success');
+        window.showToast(`Detailed AI CSV prompt for ${filtered.length} students copied!`, 'success');
       } catch (err) {
         console.error('Error copying all CSV:', err);
         window.showToast(err.message || 'Failed to copy all CSV', 'error');
